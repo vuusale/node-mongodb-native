@@ -1,3 +1,4 @@
+import { Buffer } from 'buffer';
 import * as crypto from 'crypto';
 import type { SrvRecord } from 'dns';
 import { type EventEmitter } from 'events';

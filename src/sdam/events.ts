@@ -213,6 +213,11 @@ export class ServerHeartbeatFailedEvent {
   constructor(connectionId: string, duration: number, failure: Error, awaited: boolean) {
     this.connectionId = connectionId;
     this.duration = duration;
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    failure.toJSON = function () {
+      return { name: this.name, message: this.message, stack: this.stack };
+    };
     this.failure = failure;
     this.awaited = awaited;
   }
