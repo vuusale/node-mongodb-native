@@ -10,6 +10,7 @@ import type { Connection } from './cmap/connection';
 import { MAX_SUPPORTED_WIRE_VERSION } from './cmap/wire_protocol/constants';
 import type { Collection } from './collection';
 import { LEGACY_HELLO_COMMAND } from './constants';
+import { Context } from './context';
 import type { AbstractCursor } from './cursor/abstract_cursor';
 import type { FindCursor } from './cursor/find_cursor';
 import type { Db } from './db';
@@ -26,7 +27,7 @@ import type { Explain } from './explain';
 import type { MongoClient } from './mongo_client';
 import type { CommandOperationOptions, OperationParent } from './operations/command';
 import type { Hint, OperationOptions } from './operations/operation';
-import { ReadConcern } from './read_concern';
+import { type ReadConcern } from './read_concern';
 import { ReadPreference } from './read_preference';
 import { ServerType } from './sdam/common';
 import type { Server } from './sdam/server';
@@ -519,34 +520,14 @@ export function hasAtomicOperators(doc: Document | Document[]): boolean {
 /**
  * Merge inherited properties from parent into options, prioritizing values from options,
  * then values from parent.
+ * @deprecated Migrate to Context.fromOptions
  * @internal
  */
 export function resolveOptions<T extends CommandOperationOptions>(
   parent: OperationParent | undefined,
   options?: T
 ): T {
-  const result: T = Object.assign({}, options, resolveBSONOptions(options, parent));
-
-  // Users cannot pass a readConcern/writeConcern to operations in a transaction
-  const session = options?.session;
-  if (!session?.inTransaction()) {
-    const readConcern = ReadConcern.fromOptions(options) ?? parent?.readConcern;
-    if (readConcern) {
-      result.readConcern = readConcern;
-    }
-
-    const writeConcern = WriteConcern.fromOptions(options) ?? parent?.writeConcern;
-    if (writeConcern) {
-      result.writeConcern = writeConcern;
-    }
-  }
-
-  const readPreference = ReadPreference.fromOptions(options) ?? parent?.readPreference;
-  if (readPreference) {
-    result.readPreference = readPreference;
-  }
-
-  return result;
+  return Context.fromOptions(parent, options).options; // resolveOptions will continue to work until it can be removed.
 }
 
 export function isSuperset(set: Set<any> | any[], subset: Set<any> | any[]): boolean {

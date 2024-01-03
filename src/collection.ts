@@ -3,6 +3,7 @@ import type { AnyBulkWriteOperation, BulkWriteOptions, BulkWriteResult } from '.
 import { OrderedBulkOperation } from './bulk/ordered';
 import { UnorderedBulkOperation } from './bulk/unordered';
 import { ChangeStream, type ChangeStreamDocument, type ChangeStreamOptions } from './change_stream';
+import { Context } from './context';
 import { AggregationCursor } from './cursor/aggregation_cursor';
 import { FindCursor } from './cursor/find_cursor';
 import { ListIndexesCursor } from './cursor/list_indexes_cursor';
@@ -267,13 +268,11 @@ export class Collection<TSchema extends Document = Document> {
     doc: OptionalUnlessRequiredId<TSchema>,
     options?: InsertOneOptions
   ): Promise<InsertOneResult<TSchema>> {
+    const ctx = Context.fromOptions(this, options);
     return executeOperation(
       this.client,
-      new InsertOneOperation(
-        this as TODO_NODE_3286,
-        doc,
-        resolveOptions(this, options)
-      ) as TODO_NODE_3286
+      new InsertOneOperation(this as TODO_NODE_3286, doc) as TODO_NODE_3286,
+      ctx
     );
   }
 

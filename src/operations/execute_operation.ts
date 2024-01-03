@@ -1,4 +1,5 @@
 import type { Document } from '../bson';
+import { type Context } from '../context';
 import {
   isRetryableReadError,
   isRetryableWriteError,
@@ -70,8 +71,9 @@ export interface ExecutionResult {
  */
 export async function executeOperation<
   T extends AbstractOperation<TResult>,
-  TResult = ResultTypeFromOperation<T>
->(client: MongoClient, operation: T): Promise<TResult> {
+  TResult = ResultTypeFromOperation<T>,
+  Options extends CommandOperationOptions = T['options']
+>(client: MongoClient, operation: T, ctx: Context<Options>): Promise<TResult> {
   if (!(operation instanceof AbstractOperation)) {
     // TODO(NODE-3483): Extend MongoRuntimeError
     throw new MongoRuntimeError('This method requires a valid operation instance');
