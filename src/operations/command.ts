@@ -144,7 +144,7 @@ export abstract class CommandOperation<T> extends AbstractOperation<T> {
       Object.assign(cmd, { collation: options.collation });
     }
 
-    if (typeof options.maxTimeMS === 'number') {
+    if (!this.ctx.timeouts.csotEnabled && typeof options.maxTimeMS === 'number') {
       cmd.maxTimeMS = options.maxTimeMS;
     }
 
@@ -152,6 +152,8 @@ export abstract class CommandOperation<T> extends AbstractOperation<T> {
       cmd = decorateWithExplain(cmd, this.explain);
     }
 
-    return server.commandAsync(this.ns, cmd, options);
+    this.ctx.options = options;
+
+    return server.commandAsync(this.ns, cmd, this.ctx);
   }
 }

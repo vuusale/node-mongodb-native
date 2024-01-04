@@ -58,6 +58,7 @@ export class ServerDescription {
   minWireVersion: number;
   maxWireVersion: number;
   roundTripTime: number;
+  minRoundTripTime: number;
   lastUpdateTime: number;
   lastWriteDate: number;
   me: string | null;
@@ -98,6 +99,7 @@ export class ServerDescription {
     this.minWireVersion = hello?.minWireVersion ?? 0;
     this.maxWireVersion = hello?.maxWireVersion ?? 0;
     this.roundTripTime = options?.roundTripTime ?? -1;
+    this.minRoundTripTime = -1; // TODO
     this.lastUpdateTime = now();
     this.lastWriteDate = hello?.lastWrite?.lastWriteDate ?? 0;
     this.error = options.error ?? null;

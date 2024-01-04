@@ -28,6 +28,7 @@ import {
 import type { Topology } from '../sdam/topology';
 import type { ClientSession } from '../sessions';
 import { supportsRetryableWrites } from '../utils';
+import { type CommandOperationOptions } from './command';
 import { AbstractOperation, Aspect } from './operation';
 
 const MMAPv1_RETRY_WRITES_ERROR_CODE = MONGODB_ERROR_CODES.IllegalOperation;
@@ -78,6 +79,8 @@ export async function executeOperation<
     // TODO(NODE-3483): Extend MongoRuntimeError
     throw new MongoRuntimeError('This method requires a valid operation instance');
   }
+
+  operation.ctx = ctx;
 
   if (client.topology == null) {
     // Auto connect on operation
@@ -143,6 +146,7 @@ export async function executeOperation<
 
   const server = await topology.selectServerAsync(selector, {
     session,
+    ctx,
     operationName: operation.commandName
   });
 
@@ -183,7 +187,7 @@ export async function executeOperation<
     return await operation.execute(server, session);
   } catch (operationError) {
     if (willRetry && operationError instanceof MongoError) {
-      return await retryOperation(operation, operationError, {
+      return await retryOperation(operation, ctx, operationError, {
         session,
         topology,
         selector,
@@ -211,6 +215,7 @@ async function retryOperation<
   TResult = ResultTypeFromOperation<T>
 >(
   operation: T,
+  ctx: Context<T['options']>,
   originalError: MongoError,
   { session, topology, selector, previousServer }: RetryOptions
 ): Promise<TResult> {
@@ -249,7 +254,8 @@ async function retryOperation<
   const server = await topology.selectServerAsync(selector, {
     session,
     operationName: operation.commandName,
-    previousServer
+    previousServer,
+    ctx
   });
 
   if (isWriteOperation && !supportsRetryableWrites(server)) {

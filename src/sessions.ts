@@ -5,6 +5,7 @@ import type { CommandOptions, Connection } from './cmap/connection';
 import { ConnectionPoolMetrics } from './cmap/metrics';
 import { isSharded } from './cmap/wire_protocol/shared';
 import { PINNED, UNPINNED } from './constants';
+import { Context } from './context';
 import type { AbstractCursor } from './cursor/abstract_cursor';
 import {
   type AnyError,
@@ -754,6 +755,9 @@ function endTransaction(
     command.recoveryToken = session.transaction.recoveryToken;
   }
 
+  // TODO
+  const ctx = Context.fromOptions(null, session.defaultTransactionOptions);
+
   const handleFirstCommandAttempt = (error?: Error) => {
     if (command.abortTransaction) {
       // always unpin on abort regardless of command outcome
@@ -777,7 +781,8 @@ function endTransaction(
           session,
           readPreference: ReadPreference.primary,
           bypassPinningCheck: true
-        })
+        }),
+        ctx
       ).then(() => commandHandler(), commandHandler);
       return;
     }
@@ -792,7 +797,8 @@ function endTransaction(
       session,
       readPreference: ReadPreference.primary,
       bypassPinningCheck: true
-    })
+    }),
+    ctx
   ).then(() => handleFirstCommandAttempt(), handleFirstCommandAttempt);
 }
 

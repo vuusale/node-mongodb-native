@@ -101,7 +101,7 @@ export function pluckBSONSerializeOptions(options: BSONSerializeOptions): BSONSe
  */
 export function resolveBSONOptions(
   options?: BSONSerializeOptions,
-  parent?: { bsonOptions?: BSONSerializeOptions }
+  parent?: { bsonOptions?: BSONSerializeOptions } | null
 ): BSONSerializeOptions {
   const parentOptions = parent?.bsonOptions;
   return {

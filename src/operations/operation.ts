@@ -1,4 +1,5 @@
 import { type BSONSerializeOptions, type Document, resolveBSONOptions } from '../bson';
+import { type Context } from '../context';
 import { ReadPreference, type ReadPreferenceLike } from '../read_preference';
 import type { Server } from '../sdam/server';
 import type { ClientSession } from '../sessions';
@@ -52,6 +53,7 @@ export abstract class AbstractOperation<TResult = any> {
   server!: Server;
   bypassPinningCheck: boolean;
   trySecondaryWrite: boolean;
+  ctx!: Context<this['options']>;
 
   // BSON serialization options
   bsonOptions?: BSONSerializeOptions;

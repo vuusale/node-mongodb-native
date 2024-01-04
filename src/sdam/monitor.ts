@@ -5,6 +5,7 @@ import { connect } from '../cmap/connect';
 import type { Connection, ConnectionOptions } from '../cmap/connection';
 import { getFAASEnv } from '../cmap/handshake/client_metadata';
 import { LEGACY_HELLO_COMMAND } from '../constants';
+import { Context } from '../context';
 import { MongoError, MongoErrorLabel, MongoNetworkTimeoutError } from '../error';
 import { MongoLoggableComponent } from '../mongo_logger';
 import { CancellationToken, TypedEventEmitter } from '../mongo_types';
@@ -335,18 +336,18 @@ function checkServer(monitor: Monitor, callback: Callback<Document | null>) {
       );
     }
 
+    const ctx = Context.fromOptions(monitor[kServer].topology.client, options as any);
+
     if (isAwaitable) {
       awaited = true;
-      return connection.exhaustCommand(ns('admin.$cmd'), cmd, options, (error, hello) => {
+      return connection.exhaustCommand(ns('admin.$cmd'), cmd, ctx, (error, hello) => {
         if (error) return onHeartbeatFailed(error);
         return onHeartbeatSucceeded(hello);
       });
     }
 
     awaited = false;
-    connection
-      .command(ns('admin.$cmd'), cmd, options)
-      .then(onHeartbeatSucceeded, onHeartbeatFailed);
+    connection.command(ns('admin.$cmd'), cmd, ctx).then(onHeartbeatSucceeded, onHeartbeatFailed);
 
     return;
   }
@@ -513,7 +514,9 @@ function measureRoundTripTime(rttPinger: RTTPinger, options: RTTPingerOptions) {
 
   const commandName =
     connection.serverApi?.version || connection.helloOk ? 'hello' : LEGACY_HELLO_COMMAND;
-  connection.command(ns('admin.$cmd'), { [commandName]: 1 }, undefined).then(
+
+  const ctx = Context.fromOptions(null, {} as any);
+  connection.command(ns('admin.$cmd'), { [commandName]: 1 }, ctx).then(
     () => measureAndReschedule(),
     () => {
       rttPinger.connection?.destroy({ force: true });

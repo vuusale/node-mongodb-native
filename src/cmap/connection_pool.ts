@@ -15,6 +15,7 @@ import {
   CONNECTION_POOL_READY,
   CONNECTION_READY
 } from '../constants';
+import { type Context } from '../context';
 import {
   type AnyError,
   MONGODB_ERROR_CODES,
@@ -27,7 +28,8 @@ import {
 } from '../error';
 import { CancellationToken, TypedEventEmitter } from '../mongo_types';
 import type { Server } from '../sdam/server';
-import { type Callback, eachAsync, List, makeCounter, TimeoutController } from '../utils';
+import { type Timeout } from '../timeouts';
+import { type Callback, eachAsync, List, makeCounter } from '../utils';
 import { AUTH_PROVIDERS, connect } from './connect';
 import { Connection, type ConnectionEvents, type ConnectionOptions } from './connection';
 import {
@@ -72,8 +74,6 @@ const kCancellationToken = Symbol('cancellationToken');
 /** @internal */
 const kWaitQueue = Symbol('waitQueue');
 /** @internal */
-const kCancelled = Symbol('cancelled');
-/** @internal */
 const kMetrics = Symbol('metrics');
 /** @internal */
 const kProcessingWaitQueue = Symbol('processingWaitQueue');
@@ -99,10 +99,9 @@ export interface ConnectionPoolOptions extends Omit<ConnectionOptions, 'id' | 'g
 }
 
 /** @internal */
-export interface WaitQueueMember {
+export interface ConnectionCheckoutRequest {
   callback: Callback<Connection>;
-  timeoutController: TimeoutController;
-  [kCancelled]?: boolean;
+  timeout: Timeout;
 }
 
 /** @internal */
@@ -154,7 +153,7 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
   [kServiceGenerations]: Map<string, number>;
   [kConnectionCounter]: Generator<number>;
   [kCancellationToken]: CancellationToken;
-  [kWaitQueue]: List<WaitQueueMember>;
+  [kWaitQueue]: List<ConnectionCheckoutRequest>;
   [kMetrics]: ConnectionPoolMetrics;
   [kProcessingWaitQueue]: boolean;
 
@@ -350,21 +349,25 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
    * will be held by the pool. This means that if a connection is checked out it MUST be checked back in or
    * explicitly destroyed by the new owner.
    */
-  checkOut(callback: Callback<Connection>): void {
+  checkOut(ctx: Context, callback: Callback<Connection>): void {
     this.emitAndLog(
       ConnectionPool.CONNECTION_CHECK_OUT_STARTED,
       new ConnectionCheckOutStartedEvent(this)
     );
 
-    const waitQueueTimeoutMS = this.options.waitQueueTimeoutMS;
-
-    const waitQueueMember: WaitQueueMember = {
+    const waitQueueMember: ConnectionCheckoutRequest = {
       callback,
-      timeoutController: new TimeoutController(waitQueueTimeoutMS)
+      timeout: ctx.timeouts.connectionCheckoutTimeout()
     };
-    waitQueueMember.timeoutController.signal.addEventListener('abort', () => {
-      waitQueueMember[kCancelled] = true;
-      waitQueueMember.timeoutController.clear();
+
+    (async () => {
+      const result = await waitQueueMember.timeout.raceAgainstTheClock(Promise.resolve(2));
+      if (result.status === 'expired') throw new Error('expired');
+      return result.value.toFixed();
+    })().finally(() => {});
+
+    waitQueueMember.timeout.expired.finally(() => {
+      waitQueueMember.timeout.clear();
 
       this.emitAndLog(
         ConnectionPool.CONNECTION_CHECK_OUT_FAILED,
@@ -379,7 +382,6 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
         )
       );
     });
-
     this[kWaitQueue].push(waitQueueMember);
     process.nextTick(() => this.processWaitQueue());
   }
@@ -548,6 +550,7 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
    * @param callback - The original callback
    */
   withConnection(
+    ctx: Context,
     conn: Connection | undefined,
     fn: WithConnectionCallback,
     callback: Callback<Connection>
@@ -563,7 +566,7 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
       return;
     }
 
-    this.checkOut((err, conn) => {
+    this.checkOut(ctx, (err, conn) => {
       // don't callback with `err` here, we might want to act upon it inside `fn`
       fn(err as MongoError, conn, (fnErr, result) => {
         if (fnErr) {
@@ -822,7 +825,7 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
         continue;
       }
 
-      if (waitQueueMember[kCancelled]) {
+      if (waitQueueMember.timeout.didExpire) {
         this[kWaitQueue].shift();
         continue;
       }
@@ -834,7 +837,6 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
           ConnectionPool.CONNECTION_CHECK_OUT_FAILED,
           new ConnectionCheckOutFailedEvent(this, reason, error)
         );
-        waitQueueMember.timeoutController.clear();
         this[kWaitQueue].shift();
         waitQueueMember.callback(error);
         continue;
@@ -855,7 +857,6 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
           ConnectionPool.CONNECTION_CHECKED_OUT,
           new ConnectionCheckedOutEvent(this, connection)
         );
-        waitQueueMember.timeoutController.clear();
 
         this[kWaitQueue].shift();
         waitQueueMember.callback(undefined, connection);
@@ -869,11 +870,11 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
       (maxPoolSize === 0 || this.totalConnectionCount < maxPoolSize)
     ) {
       const waitQueueMember = this[kWaitQueue].shift();
-      if (!waitQueueMember || waitQueueMember[kCancelled]) {
+      if (!waitQueueMember || waitQueueMember.timeout.didExpire) {
         continue;
       }
       this.createConnection((err, connection) => {
-        if (waitQueueMember[kCancelled]) {
+        if (waitQueueMember.timeout.didExpire) {
           if (!err && connection) {
             this[kConnections].push(connection);
           }
@@ -892,7 +893,6 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
             );
           }
 
-          waitQueueMember.timeoutController.clear();
           waitQueueMember.callback(err, connection);
         }
         process.nextTick(() => this.processWaitQueue());

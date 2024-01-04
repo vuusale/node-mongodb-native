@@ -21,6 +21,7 @@ import {
   TOPOLOGY_DESCRIPTION_CHANGED,
   TOPOLOGY_OPENING
 } from '../constants';
+import { Context } from '../context';
 import {
   MongoCompatibilityError,
   type MongoDriverError,
@@ -35,6 +36,7 @@ import { MongoLoggableComponent, type MongoLogger } from '../mongo_logger';
 import { TypedEventEmitter } from '../mongo_types';
 import { ReadPreference, type ReadPreferenceLike } from '../read_preference';
 import type { ClientSession } from '../sessions';
+import { type Timeout } from '../timeouts';
 import type { Transaction } from '../transactions';
 import {
   type Callback,
@@ -44,8 +46,7 @@ import {
   makeStateMachine,
   now,
   ns,
-  shuffle,
-  TimeoutController
+  shuffle
 } from '../utils';
 import {
   _advanceClusterTime,
@@ -91,11 +92,6 @@ const stateTransition = makeStateMachine({
 });
 
 /** @internal */
-const kCancelled = Symbol('cancelled');
-/** @internal */
-const kWaitQueue = Symbol('waitQueue');
-
-/** @internal */
 export type ServerSelectionCallback = Callback<Server>;
 
 /** @internal */
@@ -106,11 +102,12 @@ export interface ServerSelectionRequest {
   transaction?: Transaction;
   startTime: number;
   callback: ServerSelectionCallback;
-  [kCancelled]?: boolean;
   timeoutController: TimeoutController;
   operationName: string;
   waitingLogged: boolean;
   previousServer?: ServerDescription;
+  ctx: Context;
+  timeout: Timeout;
 }
 
 /** @internal */
@@ -177,6 +174,7 @@ export interface SelectServerOptions {
   session?: ClientSession;
   operationName: string;
   previousServer?: ServerDescription;
+  ctx: Context;
 }
 
 /** @public */
@@ -206,7 +204,7 @@ export class Topology extends TypedEventEmitter<TopologyEvents> {
   /** @internal */
   s: TopologyPrivate;
   /** @internal */
-  [kWaitQueue]: List<ServerSelectionRequest>;
+  waitQueue: List<ServerSelectionRequest>;
   /** @internal */
   hello?: Document;
   /** @internal */
@@ -301,7 +299,7 @@ export class Topology extends TypedEventEmitter<TopologyEvents> {
       serverDescriptions.set(hostAddress.toString(), new ServerDescription(hostAddress));
     }
 
-    this[kWaitQueue] = new List();
+    this.waitQueue = new List();
     this.s = {
       // the id of this topology
       id: topologyId,
@@ -462,18 +460,19 @@ export class Topology extends TypedEventEmitter<TopologyEvents> {
       callback ? callback(error) : this.emit(Topology.ERROR, error);
 
     const readPreference = options.readPreference ?? ReadPreference.primary;
-    const selectServerOptions = { operationName: 'ping', ...options };
+    const ctx = Context.fromOptions(this.client, options);
     this.selectServer(
       readPreferenceServerSelector(readPreference),
-      selectServerOptions,
+      { ctx, operationName: 'ping' },
       (err, server) => {
         if (err) {
           return this.close({ force: false }, () => exitWithError(err));
         }
 
+        // TODO: NODE-2471
         const skipPingOnConnect = this.s.options[Symbol.for('@@mdb.skipPingOnConnect')] === true;
         if (!skipPingOnConnect && server && this.s.credentials) {
-          server.command(ns('admin.$cmd'), { ping: 1 }, {}, err => {
+          server.command(ns('admin.$cmd'), { ping: 1 }, ctx, err => {
             if (err) {
               return exitWithError(err);
             }
@@ -517,7 +516,7 @@ export class Topology extends TypedEventEmitter<TopologyEvents> {
 
         stateTransition(this, STATE_CLOSING);
 
-        drainWaitQueue(this[kWaitQueue], new MongoTopologyClosedError());
+        drainWaitQueue(this.waitQueue, new MongoTopologyClosedError());
         drainTimerQueue(this.s.connectionTimers);
 
         if (this.s.srvPoller) {
@@ -602,11 +601,11 @@ export class Topology extends TypedEventEmitter<TopologyEvents> {
       operationName: options.operationName,
       waitingLogged: false,
       previousServer: options.previousServer
+      ctx: options.ctx,
+      timeout: options.ctx.timeouts.serverSelectionTimeout()
     };
 
-    waitQueueMember.timeoutController.signal.addEventListener('abort', () => {
-      waitQueueMember[kCancelled] = true;
-      waitQueueMember.timeoutController.clear();
+    waitQueueMember.timeout.expired.finally(() => {
       const timeoutError = new MongoServerSelectionError(
         `Server selection timed out after ${options.serverSelectionTimeoutMS} ms`,
         this.description
@@ -623,7 +622,7 @@ export class Topology extends TypedEventEmitter<TopologyEvents> {
       waitQueueMember.callback(timeoutError);
     });
 
-    this[kWaitQueue].push(waitQueueMember);
+    this.waitQueue.push(waitQueueMember);
     processWaitQueue(this);
   }
 
@@ -693,7 +692,7 @@ export class Topology extends TypedEventEmitter<TopologyEvents> {
     updateServers(this, serverDescription);
 
     // attempt to resolve any outstanding server selection attempts
-    if (this[kWaitQueue].length > 0) {
+    if (this.waitQueue.length > 0) {
       processWaitQueue(this);
     }
 
@@ -892,9 +891,9 @@ function drainWaitQueue(queue: List<ServerSelectionRequest>, err?: MongoDriverEr
       continue;
     }
 
-    waitQueueMember.timeoutController.clear();
+    waitQueueMember.timeout.clear();
 
-    if (!waitQueueMember[kCancelled]) {
+    if (!waitQueueMember.timeout.didExpire) {
       if (err) {
         waitQueueMember.mongoLogger.debug(
           MongoLoggableComponent.SERVER_SELECTION,
@@ -913,20 +912,20 @@ function drainWaitQueue(queue: List<ServerSelectionRequest>, err?: MongoDriverEr
 
 function processWaitQueue(topology: Topology) {
   if (topology.s.state === STATE_CLOSED) {
-    drainWaitQueue(topology[kWaitQueue], new MongoTopologyClosedError());
+    drainWaitQueue(topology.waitQueue, new MongoTopologyClosedError());
     return;
   }
 
   const isSharded = topology.description.type === TopologyType.Sharded;
   const serverDescriptions = Array.from(topology.description.servers.values());
-  const membersToProcess = topology[kWaitQueue].length;
+  const membersToProcess = topology.waitQueue.length;
   for (let i = 0; i < membersToProcess; ++i) {
-    const waitQueueMember = topology[kWaitQueue].shift();
+    const waitQueueMember = topology.waitQueue.shift();
     if (!waitQueueMember) {
       continue;
     }
 
-    if (waitQueueMember[kCancelled]) {
+    if (waitQueueMember.timeout.didExpire) {
       continue;
     }
 
@@ -952,6 +951,8 @@ function processWaitQueue(topology: Topology) {
           waitQueueMember.operationName
         )
       );
+      waitQueueMember.timeout.clear();
+
       waitQueueMember.callback(e);
       continue;
     }
@@ -972,7 +973,7 @@ function processWaitQueue(topology: Topology) {
         );
         waitQueueMember.waitingLogged = true;
       }
-      topology[kWaitQueue].push(waitQueueMember);
+      topology.waitQueue.push(waitQueueMember);
       continue;
     } else if (selectedDescriptions.length === 1) {
       selectedServer = topology.s.servers.get(selectedDescriptions[0].address);
@@ -1009,21 +1010,12 @@ function processWaitQueue(topology: Topology) {
       transaction.pinServer(selectedServer);
     }
 
-    waitQueueMember.timeoutController.clear();
-
-    topology.client.mongoLogger.debug(
-      MongoLoggableComponent.SERVER_SELECTION,
-      new ServerSelectionSucceededEvent(
-        waitQueueMember.serverSelector,
-        waitQueueMember.topologyDescription,
-        selectedServer.pool.address,
-        waitQueueMember.operationName
-      )
-    );
+    waitQueueMember.timeout.clear();
+    waitQueueMember.ctx.timeouts.minRoundTripTime = selectedServer.description.minRoundTripTime;
     waitQueueMember.callback(undefined, selectedServer);
   }
 
-  if (topology[kWaitQueue].length > 0) {
+  if (topology.waitQueue.length > 0) {
     // ensure all server monitors attempt monitoring soon
     for (const [, server] of topology.s.servers) {
       process.nextTick(function scheduleServerCheck() {

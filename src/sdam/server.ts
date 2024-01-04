@@ -21,6 +21,7 @@ import {
   SERVER_HEARTBEAT_STARTED,
   SERVER_HEARTBEAT_SUCCEEDED
 } from '../constants';
+import { type Context } from '../context';
 import {
   type AnyError,
   isNetworkErrorBeforeHandshake,
@@ -115,7 +116,11 @@ export class Server extends TypedEventEmitter<ServerEvents> {
   pool: ConnectionPool;
   serverApi?: ServerApi;
   hello?: Document;
-  commandAsync: (ns: MongoDBNamespace, cmd: Document, options: CommandOptions) => Promise<Document>;
+  commandAsync: (
+    ns: MongoDBNamespace,
+    cmd: Document,
+    ctx: Context<CommandOptions>
+  ) => Promise<Document>;
   monitor: Monitor | null;
 
   /** @event */
@@ -143,10 +148,10 @@ export class Server extends TypedEventEmitter<ServerEvents> {
       (
         ns: MongoDBNamespace,
         cmd: Document,
-        options: CommandOptions,
+        ctx: Context<CommandOptions>,
         // callback type defines Document result because result is never nullish when it succeeds, otherwise promise rejects
         callback: (error: Error | undefined, result: Document) => void
-      ) => this.command(ns, cmd, options, callback as any)
+      ) => this.command(ns, cmd, ctx, callback as any)
     );
 
     this.serverApi = options.serverApi;
@@ -293,12 +298,8 @@ export class Server extends TypedEventEmitter<ServerEvents> {
    * Execute a command
    * @internal
    */
-  command(
-    ns: MongoDBNamespace,
-    cmd: Document,
-    options: CommandOptions,
-    callback: Callback<Document>
-  ): void {
+  command(ns: MongoDBNamespace, cmd: Document, ctx: Context, callback: Callback<Document>): void {
+    const { options } = ctx;
     if (callback == null) {
       throw new MongoInvalidArgumentError('Callback must be provided');
     }
@@ -339,14 +340,15 @@ export class Server extends TypedEventEmitter<ServerEvents> {
     //       balanced code makes a recursive call).  Instead, we increment the count after this
     //       check.
     if (this.loadBalanced && session && conn == null && isPinnableCommand(cmd, session)) {
-      this.pool.checkOut((err, checkedOut) => {
+      this.pool.checkOut(ctx, (err, checkedOut) => {
         if (err || checkedOut == null) {
           if (callback) return callback(err);
           return;
         }
 
         session.pin(checkedOut);
-        this.command(ns, cmd, finalOptions, callback);
+        ctx.options = finalOptions;
+        this.command(ns, cmd, ctx, callback);
       });
       return;
     }
@@ -354,6 +356,7 @@ export class Server extends TypedEventEmitter<ServerEvents> {
     this.incrementOperationCount();
 
     this.pool.withConnection(
+      ctx,
       conn,
       (err, conn, cb) => {
         if (err || !conn) {
@@ -371,7 +374,8 @@ export class Server extends TypedEventEmitter<ServerEvents> {
           this.decrementOperationCount();
           cb(error, response);
         });
-        conn.command(ns, cmd, finalOptions).then(
+        ctx.options = finalOptions;
+        conn.command(ns, cmd, ctx).then(
           r => handler(undefined, r),
           e => handler(e)
         );

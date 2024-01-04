@@ -271,7 +271,7 @@ export class Collection<TSchema extends Document = Document> {
     const ctx = Context.fromOptions(this, options);
     return executeOperation(
       this.client,
-      new InsertOneOperation(this as TODO_NODE_3286, doc) as TODO_NODE_3286,
+      new InsertOneOperation(this as TODO_NODE_3286, doc, ctx.options) as TODO_NODE_3286,
       ctx
     );
   }

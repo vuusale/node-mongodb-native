@@ -13,6 +13,7 @@ import {
   PINNED,
   UNPINNED
 } from '../constants';
+import { type Context } from '../context';
 import {
   MongoCompatibilityError,
   MongoMissingDependencyError,
@@ -342,11 +343,16 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
     this.emit(Connection.CLOSE);
   }
 
-  private prepareCommand(db: string, command: Document, options: CommandOptions) {
+  private prepareCommand(db: string, command: Document, ctx: Context) {
     let cmd = { ...command };
+    const { options } = ctx;
 
     const readPreference = getReadPreference(options);
     const session = options?.session;
+
+    if (ctx.timeouts.csotEnabled) {
+      cmd.maxTimeMS = ctx.timeouts.calculateMaxTimeMS();
+    }
 
     let clusterTime = this.clusterTime;
 
@@ -460,12 +466,9 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
     }
   }
 
-  private async *sendCommand(
-    ns: MongoDBNamespace,
-    command: Document,
-    options: CommandOptions = {}
-  ) {
-    const message = this.prepareCommand(ns.db, command, options);
+  private async *sendCommand(ns: MongoDBNamespace, command: Document, ctx: Context) {
+    const message = this.prepareCommand(ns.db, command, ctx);
+    const { options } = ctx;
 
     let started = 0;
     if (this.shouldEmitAndLogCommand) {
@@ -549,13 +552,9 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
     }
   }
 
-  public async command(
-    ns: MongoDBNamespace,
-    command: Document,
-    options: CommandOptions = {}
-  ): Promise<Document> {
+  public async command(ns: MongoDBNamespace, command: Document, ctx: Context): Promise<Document> {
     this.controller.signal.throwIfAborted();
-    for await (const document of this.sendCommand(ns, command, options)) {
+    for await (const document of this.sendCommand(ns, command, ctx)) {
       return document;
     }
     throw new MongoUnexpectedServerResponseError('Unable to get response from server');
@@ -564,12 +563,12 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
   public exhaustCommand(
     ns: MongoDBNamespace,
     command: Document,
-    options: CommandOptions,
+    ctx: Context,
     replyListener: Callback
   ) {
     const exhaustLoop = async () => {
       this.controller.signal.throwIfAborted();
-      for await (const reply of this.sendCommand(ns, command, options)) {
+      for await (const reply of this.sendCommand(ns, command, ctx)) {
         replyListener(undefined, reply);
         this.controller.signal.throwIfAborted();
       }
@@ -670,11 +669,7 @@ export class CryptoConnection extends Connection {
   }
 
   /** @internal @override */
-  override async command(
-    ns: MongoDBNamespace,
-    cmd: Document,
-    options: CommandOptions
-  ): Promise<Document> {
+  override async command(ns: MongoDBNamespace, cmd: Document, ctx: Context): Promise<Document> {
     const { autoEncrypter } = this;
     if (!autoEncrypter) {
       throw new MongoMissingDependencyError('No AutoEncrypter available for encryption');
@@ -683,7 +678,7 @@ export class CryptoConnection extends Connection {
     const serverWireVersion = maxWireVersion(this);
     if (serverWireVersion === 0) {
       // This means the initial handshake hasn't happened yet
-      return super.command(ns, cmd, options);
+      return super.command(ns, cmd, ctx);
     }
 
     if (serverWireVersion < 8) {
@@ -703,7 +698,7 @@ export class CryptoConnection extends Connection {
       ? cmd.indexes.map((index: { key: Map<string, number> }) => index.key)
       : null;
 
-    const encrypted = await autoEncrypter.encrypt(ns.toString(), cmd, options);
+    const encrypted = await autoEncrypter.encrypt(ns.toString(), cmd, ctx.options);
 
     // Replace the saved values
     if (sort != null && (cmd.find || cmd.findAndModify)) {
@@ -717,8 +712,8 @@ export class CryptoConnection extends Connection {
       }
     }
 
-    const response = await super.command(ns, encrypted, options);
+    const response = await super.command(ns, encrypted, ctx);
 
-    return autoEncrypter.decrypt(response, options);
+    return autoEncrypter.decrypt(response, ctx.options);
   }
 }

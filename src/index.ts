@@ -283,7 +283,7 @@ export type {
   ConnectionPoolEvents,
   ConnectionPoolOptions,
   PoolState,
-  WaitQueueMember,
+  ConnectionCheckoutRequest as WaitQueueMember,
   WithConnectionCallback
 } from './cmap/connection_pool';
 export type { ClientMetadata, ClientMetadataOptions } from './cmap/handshake/client_metadata';
@@ -550,7 +550,6 @@ export type {
   HostAddress,
   List,
   MongoDBCollectionNamespace,
-  MongoDBNamespace,
-  TimeoutController
+  MongoDBNamespace
 } from './utils';
 export type { W, WriteConcernOptions, WriteConcernSettings } from './write_concern';

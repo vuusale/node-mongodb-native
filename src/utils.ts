@@ -1,11 +1,10 @@
 import * as crypto from 'crypto';
 import type { SrvRecord } from 'dns';
 import * as http from 'http';
-import { clearTimeout, setTimeout } from 'timers';
 import * as url from 'url';
 import { URL } from 'url';
 
-import { type Document, ObjectId, resolveBSONOptions } from './bson';
+import { type Document, ObjectId } from './bson';
 import type { Connection } from './cmap/connection';
 import { MAX_SUPPORTED_WIRE_VERSION } from './cmap/wire_protocol/constants';
 import type { Collection } from './collection';
@@ -28,12 +27,10 @@ import type { MongoClient } from './mongo_client';
 import type { CommandOperationOptions, OperationParent } from './operations/command';
 import type { Hint, OperationOptions } from './operations/operation';
 import { type ReadConcern } from './read_concern';
-import { ReadPreference } from './read_preference';
 import { ServerType } from './sdam/common';
 import type { Server } from './sdam/server';
 import type { Topology } from './sdam/topology';
 import type { ClientSession } from './sessions';
-import { WriteConcern } from './write_concern';
 
 /**
  * MongoDB Driver style callback
@@ -1213,33 +1210,6 @@ export async function request(
     req.once('error', error => reject(error));
     req.end();
   });
-}
-
-/**
- * A custom AbortController that aborts after a specified timeout.
- *
- * If `timeout` is undefined or \<=0, the abort controller never aborts.
- *
- * This class provides two benefits over the built-in AbortSignal.timeout() method.
- * - This class provides a mechanism for cancelling the timeout
- * - This class supports infinite timeouts by interpreting a timeout of 0 as infinite.  This is
- *    consistent with existing timeout options in the Node driver (serverSelectionTimeoutMS, for example).
- * @internal
- */
-export class TimeoutController extends AbortController {
-  constructor(
-    timeout = 0,
-    private timeoutId = timeout > 0 ? setTimeout(() => this.abort(), timeout) : null
-  ) {
-    super();
-  }
-
-  clear() {
-    if (this.timeoutId != null) {
-      clearTimeout(this.timeoutId);
-    }
-    this.timeoutId = null;
-  }
 }
 
 /** @internal */
