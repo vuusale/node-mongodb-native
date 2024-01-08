@@ -5,6 +5,7 @@ import * as tls from 'tls';
 
 import type { Document } from '../bson';
 import { LEGACY_HELLO_COMMAND } from '../constants';
+import { Context } from '../context';
 import { getSocks, type SocksLib } from '../deps';
 import {
   MongoCompatibilityError,
@@ -131,7 +132,8 @@ async function performInitialHandshake(
   }
 
   const start = new Date().getTime();
-  const response = await conn.command(ns('admin.$cmd'), handshakeDoc, handshakeOptions);
+  const ctx = Context.fromOptions(null, handshakeOptions);
+  const response = await conn.command(ns('admin.$cmd'), handshakeDoc, ctx);
 
   if (!('isWritablePrimary' in response)) {
     // Provide hello-style response document.

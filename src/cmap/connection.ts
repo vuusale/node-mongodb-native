@@ -352,6 +352,7 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
 
     if (ctx.timeouts.csotEnabled) {
       cmd.maxTimeMS = ctx.timeouts.calculateMaxTimeMS();
+      ctx.timeouts.csot.expired.catch(() => this.controller.abort(new Error('timeout')));
     }
 
     let clusterTime = this.clusterTime;

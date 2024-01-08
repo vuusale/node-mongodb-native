@@ -4,13 +4,21 @@ import { promiseWithResolvers } from './utils';
 
 const kTimeoutError = Symbol('isTimeoutError');
 class TimeoutError extends Error {
-  [kTimeoutError] = true;
-  static isTimeoutError(error: unknown) {
+  static is(error: unknown): error is TimeoutError {
     return (
-      error != null && typeof error === 'object' && kTimeoutError in error && error[kTimeoutError]
+      error != null &&
+      typeof error === 'object' &&
+      kTimeoutError in error &&
+      Boolean(error[kTimeoutError])
     );
   }
 }
+Object.defineProperty(TimeoutError.prototype, kTimeoutError, {
+  enumerable: false,
+  writable: false,
+  configurable: true,
+  value: true
+});
 
 export class Timeout {
   public id: Parameters<typeof clearTimeout>[0];
@@ -40,17 +48,9 @@ export class Timeout {
     return new Timeout(duration);
   }
 
-  // Promise<{ status: 'fulfilled'; value: T } | { status: 'expired'; value: null }>
   public async raceAgainstTheClock<T>(promise: Promise<T>): Promise<T> {
-    try {
-      const value = await Promise.race([promise, this.expired]);
-      if (this.didExpire) {
-        throw new Error('expired');
-      }
-      return value as unknown as T;
-    } finally {
-      this.clear();
-    }
+    const value = await Promise.race([promise, this.expired]);
+    return value as unknown as T;
   }
 
   public clear() {
@@ -59,7 +59,7 @@ export class Timeout {
 
   public get timeRemaining(): number {
     const timePassed = performance.now() - this.start;
-    return this.duration - timePassed;
+    return Math.trunc(this.duration - timePassed);
   }
 }
 
@@ -83,7 +83,7 @@ export class Timeouts {
   public readonly maxCommitTimeMS: number;
   public readonly serverSelectionTimeoutMS: number;
 
-  public minRoundTripTime = -1;
+  public minRoundTripTime = 10;
 
   /** The time at which the context began, this is only relevant to CSOT */
   public csot: Timeout;
@@ -130,13 +130,14 @@ export class Timeouts {
     if (this.csotEnabled) {
       return this.csot;
     }
+
     return Timeout.set(this.waitQueueTimeoutMS);
   }
 
   calculateMaxTimeMS(): number {
     if (!this.csotEnabled) throw new Error('misuse!');
-    if (this.minRoundTripTime < this.timeoutMS) {
-      return this.csotTimeout.tim;
-    }
+    const timeRemaining = this.csot.timeRemaining;
+    if (timeRemaining < this.minRoundTripTime) throw new TimeoutError();
+    return timeRemaining - this.minRoundTripTime;
   }
 }

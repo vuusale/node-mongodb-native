@@ -54,10 +54,11 @@ export class RunAdminCommandOperation<T = Document> extends AbstractOperation<T>
 
   override async execute(server: Server, session: ClientSession | undefined): Promise<T> {
     this.server = server;
-    return server.commandAsync(this.ns, this.command, {
+    this.ctx.options = {
       ...this.options,
       readPreference: this.readPreference,
       session
-    }) as TODO_NODE_3286;
+    };
+    return server.commandAsync(this.ns, this.command, this.ctx) as TODO_NODE_3286;
   }
 }

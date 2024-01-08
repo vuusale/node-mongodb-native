@@ -1,6 +1,7 @@
 import { Readable, Transform } from 'stream';
 
 import { type BSONSerializeOptions, type Document, Long, pluckBSONSerializeOptions } from '../bson';
+import { Context } from '../context';
 import {
   type AnyError,
   MongoAPIError,
@@ -156,6 +157,8 @@ export abstract class AbstractCursor<
   /** @internal */
   [kOptions]: InternalAbstractCursorOptions;
 
+  private ctx: Context;
+
   /** @event */
   static readonly CLOSE = 'close' as const;
 
@@ -184,6 +187,8 @@ export abstract class AbstractCursor<
           : ReadPreference.primary,
       ...pluckBSONSerializeOptions(options)
     };
+
+    this.ctx = Context.fromOptions(this.client, this[kOptions]);
 
     const readConcern = ReadConcern.fromOptions(options);
     if (readConcern) {

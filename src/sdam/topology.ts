@@ -1010,9 +1010,9 @@ function processWaitQueue(topology: Topology) {
       transaction.pinServer(selectedServer);
     }
 
-    waitQueueMember.timeout.clear();
-    waitQueueMember.ctx.timeouts.minRoundTripTime = selectedServer.description.minRoundTripTime;
-    waitQueueMember.callback(undefined, selectedServer);
+    // waitQueueMember.timeout.clear();
+    // waitQueueMember.ctx.timeouts.minRoundTripTime = 10; // selectedServer.description.minRoundTripTime;
+    // waitQueueMember.callback(undefined, selectedServer);
   }
 
   if (topology.waitQueue.length > 0) {

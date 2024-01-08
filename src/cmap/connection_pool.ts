@@ -360,15 +360,7 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
       timeout: ctx.timeouts.connectionCheckoutTimeout()
     };
 
-    (async () => {
-      const result = await waitQueueMember.timeout.raceAgainstTheClock(Promise.resolve(2));
-      if (result.status === 'expired') throw new Error('expired');
-      return result.value.toFixed();
-    })().finally(() => {});
-
     waitQueueMember.timeout.expired.finally(() => {
-      waitQueueMember.timeout.clear();
-
       this.emitAndLog(
         ConnectionPool.CONNECTION_CHECK_OUT_FAILED,
         new ConnectionCheckOutFailedEvent(this, 'timeout')
@@ -838,6 +830,7 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
           new ConnectionCheckOutFailedEvent(this, reason, error)
         );
         this[kWaitQueue].shift();
+        waitQueueMember.timeout.clear();
         waitQueueMember.callback(error);
         continue;
       }
@@ -859,6 +852,7 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
         );
 
         this[kWaitQueue].shift();
+        waitQueueMember.timeout.clear();
         waitQueueMember.callback(undefined, connection);
       }
     }
@@ -893,6 +887,7 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
             );
           }
 
+          waitQueueMember.timeout.clear();
           waitQueueMember.callback(err, connection);
         }
         process.nextTick(() => this.processWaitQueue());

@@ -104,19 +104,19 @@ export class FindOperation extends CommandOperation<Document> {
   override async execute(server: Server, session: ClientSession | undefined): Promise<Document> {
     this.server = server;
 
-    const options = this.options;
-
-    let findCommand = makeFindCommand(this.ns, this.filter, options);
-    if (this.explain) {
-      findCommand = decorateWithExplain(findCommand, this.explain);
-    }
-
-    return server.commandAsync(this.ns, findCommand, {
+    this.ctx.options = {
       ...this.options,
       ...this.bsonOptions,
       documentsReturnedIn: 'firstBatch',
       session
-    });
+    } as any;
+
+    let findCommand = makeFindCommand(this.ns, this.filter, this.ctx.options);
+    if (this.explain) {
+      findCommand = decorateWithExplain(findCommand, this.explain);
+    }
+
+    return server.commandAsync(this.ns, findCommand, this.ctx);
   }
 }
 

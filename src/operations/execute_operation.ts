@@ -184,7 +184,9 @@ export async function executeOperation<
   }
 
   try {
-    return await operation.execute(server, session);
+    const result = await operation.execute(server, session);
+    ctx.timeouts.csot?.clear();
+    return result;
   } catch (operationError) {
     if (willRetry && operationError instanceof MongoError) {
       return await retryOperation(operation, ctx, operationError, {
@@ -265,7 +267,9 @@ async function retryOperation<
   }
 
   try {
-    return await operation.execute(server, session);
+    const result = await operation.execute(server, session);
+    ctx.timeouts.csot?.clear();
+    return result;
   } catch (retryError) {
     if (
       retryError instanceof MongoError &&

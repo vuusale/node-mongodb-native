@@ -18,6 +18,7 @@ import type { ClientMetadata } from './cmap/handshake/client_metadata';
 import type { CompressorName } from './cmap/wire_protocol/compression';
 import { parseOptions, resolveSRVRecord } from './connection_string';
 import { MONGO_CLIENT_EVENTS } from './constants';
+import { Context } from './context';
 import { Db, type DbOptions } from './db';
 import type { Encrypter } from './encrypter';
 import { MongoInvalidArgumentError } from './error';
@@ -586,6 +587,7 @@ export class MongoClient extends TypedEventEmitter<MongoClientEvents> {
     const topologyDescription = this.topology.description;
     const serverDescriptions = Array.from(topologyDescription.servers.values());
     const servers = selector(topologyDescription, serverDescriptions);
+    const ctx = Context.fromOptions(this, {});
     if (servers.length !== 0) {
       const endSessions = Array.from(this.s.sessionPool.sessions, ({ id }) => id);
       if (endSessions.length !== 0) {
@@ -594,7 +596,8 @@ export class MongoClient extends TypedEventEmitter<MongoClientEvents> {
           new RunAdminCommandOperation(
             { endSessions },
             { readPreference: ReadPreference.primaryPreferred, noResponse: true }
-          )
+          ),
+          ctx
         ).catch(() => null); // outcome does not matter;
       }
     }
