@@ -15,6 +15,9 @@ export type ReadConcernLevel = (typeof ReadConcernLevel)[keyof typeof ReadConcer
 /** @public */
 export type ReadConcernLike = ReadConcern | { level: ReadConcernLevel } | ReadConcernLevel;
 
+/** @public */
+export type ReadConcernOptions = Partial<{ readConcern: ReadConcernLike; level: ReadConcernLevel }>;
+
 /**
  * The MongoDB ReadConcern, which allows for control of the consistency and isolation properties
  * of the data read from replica sets and replica set shards.
@@ -41,10 +44,7 @@ export class ReadConcern {
    *
    * @param options - The options object from which to extract the write concern.
    */
-  static fromOptions(options?: {
-    readConcern?: ReadConcernLike;
-    level?: ReadConcernLevel;
-  }): ReadConcern | undefined {
+  static fromOptions(options?: ReadConcernOptions): ReadConcern | undefined {
     if (options == null) {
       return;
     }

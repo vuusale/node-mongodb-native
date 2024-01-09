@@ -1,6 +1,5 @@
 import { type Document, resolveBSONOptions } from './bson';
 import type { Db } from './db';
-import type { CommandOperationOptions } from './operations/command';
 import { executeOperation } from './operations/execute_operation';
 import {
   ListDatabasesOperation,

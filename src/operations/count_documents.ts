@@ -1,5 +1,5 @@
 import type { Document } from '../bson';
-import type { Collection } from '../collection';
+import { type Context } from '../context';
 import type { Server } from '../sdam/server';
 import type { ClientSession } from '../sessions';
 import { AggregateOperation, type AggregateOptions } from './aggregate';
@@ -14,21 +14,23 @@ export interface CountDocumentsOptions extends AggregateOptions {
 
 /** @internal */
 export class CountDocumentsOperation extends AggregateOperation<number> {
-  constructor(collection: Collection, query: Document, options: CountDocumentsOptions) {
+  constructor(ctx: Context<CountDocumentsOptions>) {
     const pipeline = [];
-    pipeline.push({ $match: query });
+    pipeline.push({ $match: ctx.get('query') });
 
-    if (typeof options.skip === 'number') {
-      pipeline.push({ $skip: options.skip });
+    if (typeof ctx.options.skip === 'number') {
+      pipeline.push({ $skip: ctx.options.skip });
     }
 
-    if (typeof options.limit === 'number') {
-      pipeline.push({ $limit: options.limit });
+    if (typeof ctx.options.limit === 'number') {
+      pipeline.push({ $limit: ctx.options.limit });
     }
 
     pipeline.push({ $group: { _id: 1, n: { $sum: 1 } } });
 
-    super(collection.s.namespace, pipeline, options);
+    ctx.set('pipeline', pipeline);
+
+    super(ctx);
   }
 
   override async execute(server: Server, session: ClientSession | undefined): Promise<number> {

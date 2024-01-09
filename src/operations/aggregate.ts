@@ -1,19 +1,25 @@
 import type { Document } from '../bson';
+import { type Context } from '../context';
 import { MongoInvalidArgumentError } from '../error';
 import { type TODO_NODE_3286 } from '../mongo_types';
 import type { Server } from '../sdam/server';
 import type { ClientSession } from '../sessions';
 import { maxWireVersion, type MongoDBNamespace } from '../utils';
 import { WriteConcern } from '../write_concern';
-import { type CollationOptions, CommandOperation, type CommandOperationOptions } from './command';
-import { Aspect, defineAspects, type Hint } from './operation';
+import {
+  AbstractOperation,
+  Aspect,
+  defineAspects,
+  type Hint,
+  type OperationOptions
+} from './operation';
 
 /** @internal */
 export const DB_AGGREGATE_COLLECTION = 1 as const;
 const MIN_WIRE_VERSION_$OUT_READ_CONCERN_SUPPORT = 8 as const;
 
 /** @public */
-export interface AggregateOptions extends CommandOperationOptions {
+export interface AggregateOptions extends OperationOptions {
   /** allowDiskUse lets the server know if it can use disk to store temporary results for the aggregation (requires mongodb 2.6 \>). */
   allowDiskUse?: boolean;
   /** The number of documents to return per batch. See [aggregation documentation](https://www.mongodb.com/docs/manual/reference/command/aggregate). */
@@ -26,8 +32,6 @@ export interface AggregateOptions extends CommandOperationOptions {
   maxTimeMS?: number;
   /** The maximum amount of time for the server to wait on new documents to satisfy a tailable cursor query. */
   maxAwaitTimeMS?: number;
-  /** Specify collation. */
-  collation?: CollationOptions;
   /** Add an index selection hint to an aggregation command */
   hint?: Hint;
   /** Map of parameter names and values that can be accessed using $$var (requires MongoDB 5.0). */
@@ -37,29 +41,26 @@ export interface AggregateOptions extends CommandOperationOptions {
 }
 
 /** @internal */
-export class AggregateOperation<T = Document> extends CommandOperation<T> {
-  override options: AggregateOptions;
+export class AggregateOperation<T = Document> extends AbstractOperation<T, AggregateOptions> {
   target: string | typeof DB_AGGREGATE_COLLECTION;
   pipeline: Document[];
   hasWriteStage: boolean;
 
-  constructor(ns: MongoDBNamespace, pipeline: Document[], options?: AggregateOptions) {
-    super(undefined, { ...options, dbName: ns.db });
-
-    this.options = { ...options };
+  constructor(ctx: Context<AggregateOptions>) {
+    super(ctx);
 
     // Covers when ns.collection is null, undefined or the empty string, use DB_AGGREGATE_COLLECTION
-    this.target = ns.collection || DB_AGGREGATE_COLLECTION;
+    this.target = ctx.get<MongoDBNamespace>('ns').collection || DB_AGGREGATE_COLLECTION;
 
-    this.pipeline = pipeline;
+    this.pipeline = ctx.get('pipeline');
 
     // determine if we have a write stage, override read preference if so
     this.hasWriteStage = false;
-    if (typeof options?.out === 'string') {
-      this.pipeline = this.pipeline.concat({ $out: options.out });
+    if (typeof this.options?.out === 'string') {
+      this.pipeline = this.pipeline.concat({ $out: this.options.out });
       this.hasWriteStage = true;
-    } else if (pipeline.length > 0) {
-      const finalStage = pipeline[pipeline.length - 1];
+    } else if (this.pipeline.length > 0) {
+      const finalStage = this.pipeline[this.pipeline.length - 1];
       if (finalStage.$out || finalStage.$merge) {
         this.hasWriteStage = true;
       }
@@ -77,7 +78,7 @@ export class AggregateOperation<T = Document> extends CommandOperation<T> {
       );
     }
 
-    if (options?.cursor != null && typeof options.cursor !== 'object') {
+    if (this.options?.cursor != null && typeof this.options.cursor !== 'object') {
       throw new MongoInvalidArgumentError('Cursor options must be an object');
     }
   }

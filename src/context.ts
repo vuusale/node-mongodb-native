@@ -12,8 +12,10 @@ import { WriteConcern } from './write_concern';
 export class Context<Options = CommandOperationOptions> {
   timeouts: Timeouts;
   serverDescription: ServerDescription | null = null;
+  private data: Map<string, unknown>;
 
   private constructor(public options: Options) {
+    this.data = new Map();
     this.timeouts = new Timeouts(this.options as any);
   }
 
@@ -45,5 +47,13 @@ export class Context<Options = CommandOperationOptions> {
       result.readPreference = readPreference;
     }
     return new Context(result);
+  }
+
+  get<T>(name: string): T {
+    return this.data.get(name) as T;
+  }
+
+  set<T>(name: string, value: T): Map<string, unknown> {
+    return this.data.set(name, value);
   }
 }
