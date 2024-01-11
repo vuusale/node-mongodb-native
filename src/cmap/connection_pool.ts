@@ -27,7 +27,15 @@ import {
 } from '../error';
 import { CancellationToken, TypedEventEmitter } from '../mongo_types';
 import type { Server } from '../sdam/server';
-import { type Callback, eachAsync, List, makeCounter, TimeoutController } from '../utils';
+import { type Timeout } from '../timeout';
+import {
+  type Callback,
+  eachAsync,
+  List,
+  makeCounter,
+  promiseWithResolvers,
+  TimeoutController
+} from '../utils';
 import { AUTH_PROVIDERS, connect } from './connect';
 import { Connection, type ConnectionEvents, type ConnectionOptions } from './connection';
 import {
@@ -350,13 +358,17 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
    * will be held by the pool. This means that if a connection is checked out it MUST be checked back in or
    * explicitly destroyed by the new owner.
    */
-  checkOut(callback: Callback<Connection>): void {
+  checkOut(options: { timeout?: Timeout | null }, _callback: Callback<Connection>): void {
+    const { promise, resolve, reject } = promiseWithResolvers<Connection>();
+    const callback = (e?: Error, r?: Connection) => (e || r == null ? reject(e) : resolve(r));
+
     this.emitAndLog(
       ConnectionPool.CONNECTION_CHECK_OUT_STARTED,
       new ConnectionCheckOutStartedEvent(this)
     );
 
-    const waitQueueTimeoutMS = this.options.waitQueueTimeoutMS;
+    // Make this infinity if CSOT
+    const waitQueueTimeoutMS = options.timeout ? 0 : this.options.waitQueueTimeoutMS;
 
     const waitQueueMember: WaitQueueMember = {
       callback,
@@ -379,6 +391,14 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
         )
       );
     });
+
+    (options.timeout ? Promise.race([promise, options.timeout]) : promise).then(
+      r => _callback(undefined, r),
+      e => {
+        void options;
+        _callback(e);
+      }
+    );
 
     this[kWaitQueue].push(waitQueueMember);
     process.nextTick(() => this.processWaitQueue());
@@ -548,6 +568,7 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
    * @param callback - The original callback
    */
   withConnection(
+    options: { timeout?: Timeout | null },
     conn: Connection | undefined,
     fn: WithConnectionCallback,
     callback: Callback<Connection>
@@ -563,7 +584,7 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
       return;
     }
 
-    this.checkOut((err, conn) => {
+    this.checkOut(options, (err, conn) => {
       // don't callback with `err` here, we might want to act upon it inside `fn`
       fn(err as MongoError, conn, (fnErr, result) => {
         if (fnErr) {

@@ -339,7 +339,7 @@ export class Server extends TypedEventEmitter<ServerEvents> {
     //       balanced code makes a recursive call).  Instead, we increment the count after this
     //       check.
     if (this.loadBalanced && session && conn == null && isPinnableCommand(cmd, session)) {
-      this.pool.checkOut((err, checkedOut) => {
+      this.pool.checkOut(options, (err, checkedOut) => {
         if (err || checkedOut == null) {
           if (callback) return callback(err);
           return;
@@ -354,6 +354,7 @@ export class Server extends TypedEventEmitter<ServerEvents> {
     this.incrementOperationCount();
 
     this.pool.withConnection(
+      options,
       conn,
       (err, conn, cb) => {
         if (err || !conn) {

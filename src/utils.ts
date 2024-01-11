@@ -1317,3 +1317,8 @@ export function promiseWithResolvers<T>() {
   });
   return { promise, resolve, reject } as const;
 }
+
+/** A function that does nothing */
+export function noop() {
+  return;
+}

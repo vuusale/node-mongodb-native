@@ -3,6 +3,7 @@ import { EJSON } from 'bson';
 import { expect } from 'chai';
 import { inspect } from 'util';
 
+import { CSOTError } from '../../../src/timeout';
 import {
   Binary,
   type BSONTypeAlias,
@@ -726,6 +727,10 @@ export function expectErrorCheck(
 
   if (!isMongoCryptError(error)) {
     expect(error, expectMessage).to.be.instanceOf(MongoError);
+  }
+
+  if (expected.isTimeoutError === true) {
+    expect(CSOTError.is(error)).to.be.true;
   }
 
   if (expected.isClientError === false) {

@@ -28,6 +28,7 @@ import { MongoLoggableComponent, type MongoLogger, SeverityLevel } from '../mong
 import { type CancellationToken, TypedEventEmitter } from '../mongo_types';
 import type { ReadPreferenceLike } from '../read_preference';
 import { applySession, type ClientSession, updateSessionFromResponse } from '../sessions';
+import { CSOTError, type Timeout } from '../timeout';
 import {
   abortable,
   BufferPool,
@@ -83,6 +84,8 @@ export interface CommandOptions extends BSONSerializeOptions {
   willRetryWrite?: boolean;
 
   writeConcern?: WriteConcern;
+
+  timeout?: Timeout | null;
 }
 
 /** @public */
@@ -418,7 +421,8 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
     try {
       await this.writeCommand(message, {
         agreedCompressor: this.description.compressor ?? 'none',
-        zlibCompressionLevel: this.description.zlibCompressionLevel
+        zlibCompressionLevel: this.description.zlibCompressionLevel,
+        timeout: options.timeout
       });
 
       if (options.noResponse) {
@@ -428,7 +432,7 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
 
       this.controller.signal.throwIfAborted();
 
-      for await (const response of this.readMany()) {
+      for await (const response of this.readMany({ timeout: options.timeout })) {
         this.socket.setTimeout(0);
         response.parse(options);
 
@@ -513,7 +517,8 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
         yield document;
         this.controller.signal.throwIfAborted();
       }
-    } catch (error) {
+    } catch (thrown) {
+      const error = CSOTError.is(thrown) ? CSOTError.from(thrown) : thrown;
       if (this.shouldEmitAndLogCommand) {
         if (error.name === 'MongoWriteConcernError') {
           this.emitAndLogCommand(
@@ -586,7 +591,11 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
    */
   private async writeCommand(
     command: WriteProtocolMessageType,
-    options: { agreedCompressor?: CompressorName; zlibCompressionLevel?: number }
+    options: {
+      agreedCompressor?: CompressorName;
+      zlibCompressionLevel?: number;
+      timeout?: Timeout | null;
+    }
   ): Promise<void> {
     const finalCommand =
       options.agreedCompressor === 'none' || !OpCompressedRequest.canCompress(command)
@@ -598,7 +607,9 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
 
     const buffer = Buffer.concat(await finalCommand.toBin());
 
-    return this.socketWrite(buffer);
+    options.timeout?.throwIfExpired();
+    const write = this.socketWrite(buffer);
+    return options.timeout ? Promise.race([write, options.timeout]) : write;
   }
 
   /**
@@ -610,8 +621,13 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
    *
    * Note that `for-await` loops call `return` automatically when the loop is exited.
    */
-  private async *readMany(): AsyncGenerator<OpMsgResponse | OpQueryResponse> {
-    for await (const message of onData(this.messageStream, { signal: this.controller.signal })) {
+  private async *readMany(options: {
+    timeout?: Timeout | null;
+  }): AsyncGenerator<OpMsgResponse | OpQueryResponse> {
+    for await (const message of onData(this.messageStream, {
+      signal: this.controller.signal,
+      timeout: options.timeout
+    })) {
       const response = await decompressResponse(message);
       yield response;
 

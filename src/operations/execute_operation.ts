@@ -141,7 +141,8 @@ export async function executeOperation<
 
   const server = await topology.selectServerAsync(selector, {
     session,
-    operationName: operation.commandName
+    operationName: operation.commandName,
+    timeout: operation.timeout
   });
 
   if (session == null) {

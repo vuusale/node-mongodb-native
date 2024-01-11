@@ -198,7 +198,11 @@ operations.set('assertNumberConnectionsCheckedOut', async ({ entities, operation
 operations.set('bulkWrite', async ({ entities, operation }) => {
   const collection = entities.getEntity('collection', operation.object);
   const { requests, ...opts } = operation.arguments!;
-  return collection.bulkWrite(requests, opts);
+  const start = Math.trunc(performance.now());
+  const res = await collection.bulkWrite(requests, opts);
+  const end = Math.trunc(performance.now());
+  console.log('bulkWrite took', end - start, 'ms');
+  return res;
 });
 
 // The entity exists for the name but can potentially have the wrong

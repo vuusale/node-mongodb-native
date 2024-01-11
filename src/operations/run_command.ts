@@ -13,6 +13,7 @@ export type RunCommandOptions = {
   session?: ClientSession;
   /** The read preference */
   readPreference?: ReadPreferenceLike;
+  timeoutMS?: number;
 } & BSONSerializeOptions;
 
 /** @internal */
@@ -31,7 +32,8 @@ export class RunCommandOperation<T = Document> extends AbstractOperation<T> {
     return server.commandAsync(this.ns, this.command, {
       ...this.options,
       readPreference: this.readPreference,
-      session
+      session,
+      timeout: this.timeout
     }) as TODO_NODE_3286;
   }
 }

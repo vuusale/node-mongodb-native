@@ -35,6 +35,7 @@ import { MongoLoggableComponent, type MongoLogger } from '../mongo_logger';
 import { TypedEventEmitter } from '../mongo_types';
 import { ReadPreference, type ReadPreferenceLike } from '../read_preference';
 import type { ClientSession } from '../sessions';
+import { type Timeout } from '../timeout';
 import type { Transaction } from '../transactions';
 import {
   type Callback,
@@ -44,6 +45,7 @@ import {
   makeStateMachine,
   now,
   ns,
+  promiseWithResolvers,
   shuffle,
   TimeoutController
 } from '../utils';
@@ -177,6 +179,7 @@ export interface SelectServerOptions {
   session?: ClientSession;
   operationName: string;
   previousServer?: ServerDescription;
+  timeout?: Timeout | null;
 }
 
 /** @public */
@@ -546,8 +549,11 @@ export class Topology extends TypedEventEmitter<TopologyEvents> {
   selectServer(
     selector: string | ReadPreference | ServerSelector,
     options: SelectServerOptions,
-    callback: Callback<Server>
+    _callback: Callback<Server>
   ): void {
+    const { promise, resolve, reject } = promiseWithResolvers<Server>();
+    const callback = (e?: Error, r?: Server) => (e || r == null ? reject(e) : resolve(r));
+
     let serverSelector;
     if (typeof selector !== 'function') {
       if (typeof selector === 'string') {
@@ -622,6 +628,11 @@ export class Topology extends TypedEventEmitter<TopologyEvents> {
       );
       waitQueueMember.callback(timeoutError);
     });
+
+    (options.timeout != null ? Promise.race([promise, options.timeout]) : promise).then(
+      r => _callback(undefined, r),
+      e => _callback(e)
+    );
 
     this[kWaitQueue].push(waitQueueMember);
     processWaitQueue(this);

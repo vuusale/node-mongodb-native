@@ -1,5 +1,6 @@
 import { type EventEmitter } from 'events';
 
+import { type Timeout } from '../../timeout';
 import { List, promiseWithResolvers } from '../../utils';
 
 /**
@@ -18,7 +19,10 @@ type PendingPromises = Omit<
  * Returns an AsyncIterator that iterates each 'data' event emitted from emitter.
  * It will reject upon an error event or if the provided signal is aborted.
  */
-export function onData(emitter: EventEmitter, options: { signal: AbortSignal }) {
+export function onData(
+  emitter: EventEmitter,
+  options: { signal: AbortSignal; timeout?: Timeout | null }
+) {
   const signal = options.signal;
 
   // Setup pending events and pending promise lists
@@ -88,6 +92,7 @@ export function onData(emitter: EventEmitter, options: { signal: AbortSignal }) 
   // Adding event handlers
   emitter.on('data', eventHandler);
   emitter.on('error', errorHandler);
+  options.timeout?.then(() => null, errorHandler);
 
   if (signal.aborted) {
     // If the signal is aborted, set up the first .next() call to be a rejection
