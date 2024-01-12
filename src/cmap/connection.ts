@@ -28,7 +28,7 @@ import { MongoLoggableComponent, type MongoLogger, SeverityLevel } from '../mong
 import { type CancellationToken, TypedEventEmitter } from '../mongo_types';
 import type { ReadPreferenceLike } from '../read_preference';
 import { applySession, type ClientSession, updateSessionFromResponse } from '../sessions';
-import { CSOTError, type Timeout } from '../timeout';
+import { CSOTError, Timeout } from '../timeout';
 import {
   abortable,
   BufferPool,
@@ -62,6 +62,7 @@ import { StreamDescription, type StreamDescriptionOptions } from './stream_descr
 import { type CompressorName, decompressResponse } from './wire_protocol/compression';
 import { onData } from './wire_protocol/on_data';
 import { getReadPreference, isSharded } from './wire_protocol/shared';
+import { commandDocument } from './auth/mongodb_oidc/service_workflow';
 
 /** @internal */
 export interface CommandOptions extends BSONSerializeOptions {
@@ -352,6 +353,10 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
     const session = options?.session;
 
     let clusterTime = this.clusterTime;
+
+    if (Timeout.is(options.timeout)) {
+      cmd.maxTimeMS = options.timeout.getMaxTimeMS(minRoundTripTime)
+    }
 
     if (this.serverApi) {
       const { version, strict, deprecationErrors } = this.serverApi;

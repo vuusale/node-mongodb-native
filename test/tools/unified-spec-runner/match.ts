@@ -3,7 +3,6 @@ import { EJSON } from 'bson';
 import { expect } from 'chai';
 import { inspect } from 'util';
 
-import { CSOTError } from '../../../src/timeout';
 import {
   Binary,
   type BSONTypeAlias,
@@ -21,6 +20,7 @@ import {
   ConnectionPoolCreatedEvent,
   ConnectionPoolReadyEvent,
   ConnectionReadyEvent,
+  CSOTError,
   type Document,
   Long,
   MongoError,
@@ -134,37 +134,58 @@ export function isSpecialOperator(value: unknown): value is SpecialOperator {
 }
 
 const TYPE_MAP = new Map();
+function hasBSONType(value: unknown): value is { _bsontype: string } & Record<string, any> {
+  return (
+    typeof value === 'object' &&
+    value != null &&
+    '_bsontype' in value &&
+    typeof value._bsontype === 'string'
+  );
+}
 
-TYPE_MAP.set('double', actual => typeof actual === 'number' || actual._bsontype === 'Double');
-TYPE_MAP.set('string', actual => typeof actual === 'string');
-TYPE_MAP.set('object', actual => typeof actual === 'object' && actual !== null);
-TYPE_MAP.set('array', actual => Array.isArray(actual));
-TYPE_MAP.set('binData', actual => actual instanceof Binary);
-TYPE_MAP.set('undefined', actual => actual === undefined);
-TYPE_MAP.set('objectId', actual => actual instanceof ObjectId);
-TYPE_MAP.set('bool', actual => typeof actual === 'boolean');
-TYPE_MAP.set('date', actual => actual instanceof Date);
-TYPE_MAP.set('null', actual => actual === null);
-TYPE_MAP.set('regex', actual => actual instanceof RegExp || actual._bsontype === 'BSONRegExp');
-TYPE_MAP.set('dbPointer', actual => actual._bsontype === 'DBRef');
-TYPE_MAP.set('javascript', actual => actual._bsontype === 'Code');
-TYPE_MAP.set('symbol', actual => actual._bsontype === 'Symbol');
-TYPE_MAP.set('javascriptWithScope', actual => actual._bsontype === 'Code' && actual.scope);
-TYPE_MAP.set('timestamp', actual => actual._bsontype === 'Timestamp');
-TYPE_MAP.set('decimal', actual => actual._bsontype === 'Decimal128');
-TYPE_MAP.set('minKey', actual => actual._bsontype === 'MinKey');
-TYPE_MAP.set('maxKey', actual => actual._bsontype === 'MaxKey');
 TYPE_MAP.set(
-  'int',
-  actual => (typeof actual === 'number' && Number.isInteger(actual)) || actual._bsontype === 'Int32'
-);
-TYPE_MAP.set(
-  'long',
-  actual =>
-    (typeof actual === 'number' && Number.isInteger(actual)) ||
-    Long.isLong(actual) ||
-    typeof actual === 'bigint'
-);
+  'double',
+  (actual: unknown) =>
+    typeof actual === 'number' || (hasBSONType(actual) && actual._bsontype === 'Double')
+)
+  .set('string', (actual: unknown) => typeof actual === 'string')
+  .set('object', (actual: unknown) => typeof actual === 'object' && actual !== null)
+  .set('array', (actual: unknown) => Array.isArray(actual))
+  .set('binData', (actual: unknown) => actual instanceof Binary)
+  .set('undefined', (actual: unknown) => actual === undefined)
+  .set('objectId', (actual: unknown) => actual instanceof ObjectId)
+  .set('bool', (actual: unknown) => typeof actual === 'boolean')
+  .set('date', (actual: unknown) => actual instanceof Date)
+  .set('null', (actual: unknown) => actual === null)
+  .set(
+    'regex',
+    (actual: unknown) =>
+      actual instanceof RegExp || (hasBSONType(actual) && actual._bsontype === 'BSONRegExp')
+  )
+  .set('dbPointer', (actual: unknown) => hasBSONType(actual) && actual._bsontype === 'DBRef')
+  .set('javascript', (actual: unknown) => hasBSONType(actual) && actual._bsontype === 'Code')
+  .set('symbol', (actual: unknown) => hasBSONType(actual) && actual._bsontype === 'Symbol')
+  .set(
+    'javascriptWithScope',
+    (actual: unknown) => hasBSONType(actual) && actual._bsontype === 'Code' && actual.scope
+  )
+  .set('timestamp', (actual: unknown) => hasBSONType(actual) && actual._bsontype === 'Timestamp')
+  .set('decimal', (actual: unknown) => hasBSONType(actual) && actual._bsontype === 'Decimal128')
+  .set('minKey', (actual: unknown) => hasBSONType(actual) && actual._bsontype === 'MinKey')
+  .set('maxKey', (actual: unknown) => hasBSONType(actual) && actual._bsontype === 'MaxKey')
+  .set(
+    'int',
+    (actual: unknown) =>
+      (typeof actual === 'number' && Number.isInteger(actual)) ||
+      (hasBSONType(actual) && actual?._bsontype === 'Int32')
+  )
+  .set(
+    'long',
+    (actual: unknown) =>
+      (typeof actual === 'number' && Number.isInteger(actual)) ||
+      Long.isLong(actual) ||
+      typeof actual === 'bigint'
+  );
 
 /**
  * resultCheck
@@ -343,7 +364,7 @@ export function specialCheck(
     for (const type of types) {
       ok ||= TYPE_MAP.get(type)(actual);
     }
-    expect(ok, `Expected [${actual}] to be one of [${types}]`).to.be.true;
+    expect(ok, `Expected [${actual}] to be one of [${types}] at ${path}`).to.be.true;
   } else if (isExistsOperator(expected)) {
     // $$exists
     const actualExists = actual !== undefined && actual !== null;
@@ -723,10 +744,10 @@ export function expectErrorCheck(
   expected: ExpectedError,
   entities: EntitiesMap
 ): void {
-  const expectMessage = `\n\nOriginal Error Stack:\n${error.stack}\n\n`;
+  // const expectMessage = `\n\nOriginal Error Stack:\n${error.stack}\n\n`;
 
   if (!isMongoCryptError(error)) {
-    expect(error, expectMessage).to.be.instanceOf(MongoError);
+    expect(error).to.be.instanceOf(MongoError);
   }
 
   if (expected.isTimeoutError === true) {
@@ -740,15 +761,15 @@ export function expectErrorCheck(
   }
 
   if (expected.errorContains != null) {
-    expect(error.message, expectMessage).to.include(expected.errorContains);
+    expect(error.message).to.include(expected.errorContains);
   }
 
   if (expected.errorCode != null) {
-    expect(error, expectMessage).to.have.property('code', expected.errorCode);
+    expect(error).to.have.property('code', expected.errorCode);
   }
 
   if (expected.errorCodeName != null) {
-    expect(error, expectMessage).to.have.property('codeName', expected.errorCodeName);
+    expect(error).to.have.property('codeName', expected.errorCodeName);
   }
 
   if (expected.errorLabelsContain != null) {
@@ -756,7 +777,7 @@ export function expectErrorCheck(
     for (const errorLabel of expected.errorLabelsContain) {
       expect(
         mongoError.hasErrorLabel(errorLabel),
-        `Error was supposed to have label ${errorLabel}, has [${mongoError.errorLabels}] -- ${expectMessage}`
+        `Error was supposed to have label ${errorLabel}, has [${mongoError.errorLabels}] -- ${''}`
       ).to.be.true;
     }
   }
@@ -766,7 +787,7 @@ export function expectErrorCheck(
     for (const errorLabel of expected.errorLabelsOmit) {
       expect(
         mongoError.hasErrorLabel(errorLabel),
-        `Error was not supposed to have label ${errorLabel}, has [${mongoError.errorLabels}] -- ${expectMessage}`
+        `Error was not supposed to have label ${errorLabel}, has [${mongoError.errorLabels}] --`
       ).to.be.false;
     }
   }

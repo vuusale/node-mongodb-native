@@ -1,13 +1,14 @@
 import { clearTimeout, setTimeout } from 'timers';
 
+import { MongoError } from './error';
 import { noop } from './utils';
 
-export class CSOTError extends Error {
+export class CSOTError extends MongoError {
   override get name(): 'CSOTError' {
     return 'CSOTError';
   }
 
-  constructor(message?: string, options?: { cause?: Error }) {
+  constructor(message: string, options?: { cause?: Error }) {
     super(message, options);
   }
 
@@ -23,7 +24,7 @@ export class CSOTError extends Error {
 }
 
 export class Timeout extends Promise<never> {
-  static get [Symbol.toStringTag](): 'Timeout' {
+  get [Symbol.toStringTag](): 'Timeout' {
     return 'Timeout';
   }
 
@@ -112,5 +113,14 @@ export class Timeout extends Promise<never> {
 
   public static expires(duration: number): Timeout {
     return new Timeout(undefined, duration);
+  }
+
+  static is(timeout: unknown): timeout is Timeout {
+    return (
+      typeof timeout === 'object' &&
+      timeout != null &&
+      Symbol.toStringTag in timeout &&
+      timeout[Symbol.toStringTag] === 'Timeout'
+    );
   }
 }

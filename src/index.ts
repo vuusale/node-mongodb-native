@@ -73,6 +73,7 @@ export {
   MongoUnexpectedServerResponseError,
   MongoWriteConcernError
 } from './error';
+export { CSOTError } from './timeout';
 export {
   AbstractCursor,
   // Actual driver classes exported

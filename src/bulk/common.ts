@@ -20,6 +20,7 @@ import { makeUpdateStatement, UpdateOperation, type UpdateStatement } from '../o
 import type { Server } from '../sdam/server';
 import type { Topology } from '../sdam/topology';
 import type { ClientSession } from '../sessions';
+import { CSOTError } from '../timeout';
 import {
   applyRetryableWrites,
   type Callback,
@@ -514,6 +515,7 @@ function executeCommands(
   const batch = bulkOperation.s.batches.shift() as Batch;
 
   function resultHandler(err?: AnyError, result?: Document) {
+    if (CSOTError.is(err)) return callback(err);
     // Error is a driver related error not a bulk op error, return early
     if (err && 'message' in err && !(err instanceof MongoWriteConcernError)) {
       return callback(

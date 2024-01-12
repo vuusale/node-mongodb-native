@@ -39,7 +39,7 @@ export interface OperationOptions extends BSONSerializeOptions {
   /** @public */
   timeoutMS?: number;
   /** @internal (for now?) */
-  nodeTimeout?: Timeout | null;
+  timeout?: number | Timeout | null;
 }
 
 /** @internal */
@@ -70,8 +70,11 @@ export abstract class AbstractOperation<TResult = any> {
 
   constructor(options: OperationOptions = {}) {
     this.timeout =
-      options.nodeTimeout ??
-      (typeof options.timeoutMS === 'number' ? Timeout.expires(options.timeoutMS) : null);
+      options.timeout != null && typeof options.timeout !== 'number'
+        ? options.timeout
+        : typeof options.timeoutMS === 'number'
+        ? Timeout.expires(options.timeoutMS)
+        : null;
 
     this.readPreference = this.hasAspect(Aspect.WRITE_OPERATION)
       ? ReadPreference.primary
