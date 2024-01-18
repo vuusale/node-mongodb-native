@@ -57,12 +57,12 @@ import {
   type WriteProtocolMessageType
 } from './commands';
 import type { Stream } from './connect';
+import { type ConnectionPool } from './connection_pool';
 import type { ClientMetadata } from './handshake/client_metadata';
 import { StreamDescription, type StreamDescriptionOptions } from './stream_description';
 import { type CompressorName, decompressResponse } from './wire_protocol/compression';
 import { onData } from './wire_protocol/on_data';
 import { getReadPreference, isSharded } from './wire_protocol/shared';
-import { commandDocument } from './auth/mongodb_oidc/service_workflow';
 
 /** @internal */
 export interface CommandOptions extends BSONSerializeOptions {
@@ -182,6 +182,7 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
    * Once connection is established, command logging can log events (if enabled)
    */
   public established: boolean;
+  public pool?: ConnectionPool;
 
   private lastUseTime: number;
   private socketTimeoutMS: number;
@@ -238,6 +239,10 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
     this.socketWrite = async buffer => {
       return abortable(socketWrite(buffer), { signal: this.controller.signal });
     };
+  }
+
+  private get minRoundTripTime(): number {
+    return this.pool?.server.description.minRoundTripTime ?? 0;
   }
 
   /** Indicates that the connection (including underlying TCP socket) has been closed. */
@@ -355,7 +360,7 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
     let clusterTime = this.clusterTime;
 
     if (Timeout.is(options.timeout)) {
-      cmd.maxTimeMS = options.timeout.getMaxTimeMS(minRoundTripTime)
+      cmd.maxTimeMS = options.timeout.getMaxTimeMS(this.minRoundTripTime);
     }
 
     if (this.serverApi) {

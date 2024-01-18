@@ -267,6 +267,10 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
     });
   }
 
+  get server(): Server {
+    return this[kServer];
+  }
+
   /** The address of the endpoint the pool is connected to */
   get address(): string {
     return this.options.hostAddress.toString();
@@ -781,6 +785,7 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
         }
       }
 
+      connection.pool = this;
       connection.markAvailable();
       this.emitAndLog(ConnectionPool.CONNECTION_READY, new ConnectionReadyEvent(this, connection));
 

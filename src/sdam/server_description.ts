@@ -58,6 +58,7 @@ export class ServerDescription {
   minWireVersion: number;
   maxWireVersion: number;
   roundTripTime: number;
+  minRoundTripTime = 0;
   lastUpdateTime: number;
   lastWriteDate: number;
   me: string | null;

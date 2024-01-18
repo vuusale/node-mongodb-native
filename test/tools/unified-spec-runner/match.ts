@@ -751,7 +751,7 @@ export function expectErrorCheck(
   }
 
   if (expected.isTimeoutError === true) {
-    expect(CSOTError.is(error)).to.be.true;
+    expect(CSOTError.is(error), error.stack).to.be.true;
   }
 
   if (expected.isClientError === false) {

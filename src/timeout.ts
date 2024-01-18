@@ -100,6 +100,11 @@ export class Timeout extends Promise<never> {
     }
   }
 
+  public getMaxTimeMS(minRoundTripTime: number): any {
+    if (minRoundTripTime < this.remainingTime) return this.remainingTime - minRoundTripTime;
+    throw CSOTError.from(this.timeoutError);
+  }
+
   public throwIfExpired() {
     if (this.timedOut) {
       throw CSOTError.from(this.timeoutError);
