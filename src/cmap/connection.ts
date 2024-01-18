@@ -617,7 +617,6 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
 
     const buffer = Buffer.concat(await finalCommand.toBin());
 
-    options.timeout?.throwIfExpired();
     const write = this.socketWrite(buffer);
     return options.timeout ? Promise.race([write, options.timeout]) : write;
   }

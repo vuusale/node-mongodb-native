@@ -364,7 +364,7 @@ export function specialCheck(
     for (const type of types) {
       ok ||= TYPE_MAP.get(type)(actual);
     }
-    expect(ok, `Expected [${actual}] to be one of [${types}] at ${path}`).to.be.true;
+    expect(ok, `Expected [${actual}] to be one of [${types}] at ${path.join('')}`).to.be.true;
   } else if (isExistsOperator(expected)) {
     // $$exists
     const actualExists = actual !== undefined && actual !== null;

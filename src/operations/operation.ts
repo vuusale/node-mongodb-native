@@ -39,7 +39,7 @@ export interface OperationOptions extends BSONSerializeOptions {
   /** @public */
   timeoutMS?: number;
   /** @internal (for now?) */
-  timeout?: number | Timeout | null;
+  csotTimeout?: Timeout | null;
 }
 
 /** @internal */
@@ -70,8 +70,8 @@ export abstract class AbstractOperation<TResult = any> {
 
   constructor(options: OperationOptions = {}) {
     this.timeout =
-      options.timeout != null && typeof options.timeout !== 'number'
-        ? options.timeout
+      options.csotTimeout != null && typeof options.csotTimeout !== 'number'
+        ? options.csotTimeout
         : typeof options.timeoutMS === 'number'
         ? Timeout.expires(options.timeoutMS)
         : null;

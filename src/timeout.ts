@@ -24,8 +24,8 @@ export class CSOTError extends MongoError {
 }
 
 export class Timeout extends Promise<never> {
-  get [Symbol.toStringTag](): 'Timeout' {
-    return 'Timeout';
+  get [Symbol.toStringTag](): 'MongoDBTimeout' {
+    return 'MongoDBTimeout';
   }
 
   private expireTimeout: () => void;
@@ -94,6 +94,7 @@ export class Timeout extends Promise<never> {
       return;
     }
 
+    clearTimeout(this.id);
     this.id = setTimeout(this.expireTimeout, this.duration);
     if (typeof this.id.unref === 'function') {
       this.id.unref();
@@ -103,12 +104,6 @@ export class Timeout extends Promise<never> {
   public getMaxTimeMS(minRoundTripTime: number): any {
     if (minRoundTripTime < this.remainingTime) return this.remainingTime - minRoundTripTime;
     throw CSOTError.from(this.timeoutError);
-  }
-
-  public throwIfExpired() {
-    if (this.timedOut) {
-      throw CSOTError.from(this.timeoutError);
-    }
   }
 
   /** Create a new pending Timeout with the same duration */
@@ -125,7 +120,9 @@ export class Timeout extends Promise<never> {
       typeof timeout === 'object' &&
       timeout != null &&
       Symbol.toStringTag in timeout &&
-      timeout[Symbol.toStringTag] === 'Timeout'
+      timeout[Symbol.toStringTag] === 'MongoDBTimeout' &&
+      'then' in timeout &&
+      typeof timeout.then === 'function'
     );
   }
 }
