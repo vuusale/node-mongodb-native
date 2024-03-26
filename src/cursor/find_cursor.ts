@@ -1,4 +1,4 @@
-import { type Document, Long } from '../bson';
+import { BSONType, type Document, Long } from '../bson';
 import { MongoInvalidArgumentError, MongoTailableCursorError } from '../error';
 import { type ExplainVerbosityLike } from '../explain';
 import type { MongoClient } from '../mongo_client';
@@ -109,8 +109,10 @@ export class FindCursor<TSchema = any> extends AbstractCursor<TSchema> {
 
     const response = await super.getMore(batchSize);
     // TODO: wrap this in some logic to prevent it from happening if we don't need this support
-    if (response) {
-      this[kNumReturned] = this[kNumReturned] + response.cursor.nextBatch.length;
+    const cursor = response?.getValue('cursor', BSONType.object);
+    if (cursor != null) {
+      this[kNumReturned] =
+        this[kNumReturned] + cursor.getValue('nextBatch', BSONType.object, true).length;
     }
 
     return response;

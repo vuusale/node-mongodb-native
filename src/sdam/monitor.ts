@@ -342,10 +342,13 @@ function checkServer(monitor: Monitor, callback: Callback<Document | null>) {
 
     if (isAwaitable) {
       awaited = true;
-      return connection.exhaustCommand(ns('admin.$cmd'), cmd, options, (error, hello) => {
-        if (error) return onHeartbeatFailed(error);
-        return onHeartbeatSucceeded(hello);
-      });
+      return connection.exhaustCommand(
+        ns('admin.$cmd'),
+        cmd,
+        options,
+        onHeartbeatSucceeded,
+        onHeartbeatFailed
+      );
     }
 
     awaited = false;
@@ -380,7 +383,7 @@ function checkServer(monitor: Monitor, callback: Callback<Document | null>) {
       monitor.emitAndLogHeartbeat(
         Server.SERVER_HEARTBEAT_SUCCEEDED,
         monitor[kServer].topology.s.id,
-        connection.hello?.connectionId,
+        connection.description.serverConnectionId,
         new ServerHeartbeatSucceededEvent(
           monitor.address,
           calculateDurationInMs(start),

@@ -9,6 +9,7 @@ import {
 } from '../../error';
 import { ns, randomBytes } from '../../utils';
 import type { HandshakeDocument } from '../connect';
+import { type MongoDBResponse } from '../wire_protocol/server_response';
 import { type AuthContext, AuthProvider } from './auth_provider';
 import type { MongoCredentials } from './mongo_credentials';
 import { AuthMechanism } from './providers';
@@ -57,7 +58,7 @@ class ScramSHA extends AuthProvider {
         authContext
       );
     }
-    return executeScram(this.cryptoMethod, authContext);
+    return await executeScram(this.cryptoMethod, authContext);
   }
 }
 
@@ -110,13 +111,13 @@ async function executeScram(cryptoMethod: CryptoMethod, authContext: AuthContext
   const db = credentials.source;
 
   const saslStartCmd = makeFirstMessage(cryptoMethod, credentials, nonce);
-  const response = await connection.command(ns(`${db}.$cmd`), saslStartCmd, undefined);
+  const response = await connection.command(ns(`${db}.$cmd`), saslStartCmd);
   await continueScramConversation(cryptoMethod, response, authContext);
 }
 
 async function continueScramConversation(
   cryptoMethod: CryptoMethod,
-  response: Document,
+  response: MongoDBResponse,
   authContext: AuthContext
 ): Promise<void> {
   const connection = authContext.connection;
@@ -136,9 +137,7 @@ async function continueScramConversation(
   const processedPassword =
     cryptoMethod === 'sha256' ? saslprep(password) : passwordDigest(username, password);
 
-  const payload: Binary = Buffer.isBuffer(response.payload)
-    ? new Binary(response.payload)
-    : response.payload;
+  const payload: Binary = response.payloadAsBinary;
 
   const dict = parsePayload(payload);
 
@@ -185,7 +184,7 @@ async function continueScramConversation(
   };
 
   const r = await connection.command(ns(`${db}.$cmd`), saslContinueCmd, undefined);
-  const parsedResponse = parsePayload(r.payload);
+  const parsedResponse = parsePayload(r.payloadAsBinary);
 
   if (!compareDigest(Buffer.from(parsedResponse.v, 'base64'), serverSignature)) {
     throw new MongoRuntimeError('Server returned an invalid signature');

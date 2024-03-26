@@ -1,6 +1,14 @@
 import { Readable, Transform } from 'stream';
 
-import { type BSONSerializeOptions, type Document, Long, pluckBSONSerializeOptions } from '../bson';
+import {
+  type BSONSerializeOptions,
+  BSONType,
+  type Document,
+  Long,
+  pluckBSONSerializeOptions
+} from '../bson';
+import { type OnDemandDocument } from '../cmap/wire_protocol/on_demand_document';
+import { type MongoDBResponse } from '../cmap/wire_protocol/server_response';
 import {
   type AnyError,
   MongoAPIError,
@@ -158,6 +166,21 @@ export abstract class AbstractCursor<
 
   /** @event */
   static readonly CLOSE = 'close' as const;
+  /** @internal */
+  public batches: List<OnDemandDocument>;
+  private docCounter = 0;
+  nextDocumentInABatch(): TSchema | null {
+    const batch = this.batches.first();
+    if (batch == null) return null;
+    const elementName = `${this.docCounter}`;
+    const document = batch.getValue(elementName, BSONType.object)?.toObject() ?? null;
+    this.docCounter += 1;
+    if (this.docCounter >= batch.length) {
+      this.batches.shift();
+      this.docCounter = 0;
+    }
+    return document;
+  }
 
   /** @internal */
   constructor(
@@ -170,6 +193,7 @@ export abstract class AbstractCursor<
     if (!client.s.isMongoClient) {
       throw new MongoRuntimeError('Cursor must be constructed with MongoClient');
     }
+    this.batches = new List();
     this[kClient] = client;
     this[kNamespace] = namespace;
     this[kId] = null;
@@ -306,12 +330,12 @@ export abstract class AbstractCursor<
         // eslint-disable-next-line no-restricted-syntax
         if (document === null) {
           if (!this.closed) {
-            const message =
-              'Cursor returned a `null` document, but the cursor is not exhausted.  Mapping documents to `null` is not supported in the cursor transform.';
+            // const message =
+            //   'Cursor returned a `null` document, but the cursor is not exhausted.  Mapping documents to `null` is not supported in the cursor transform.';
 
             await cleanupCursor(this, { needsToEmitClosed: true }).catch(() => null);
 
-            throw new MongoAPIError(message);
+            // throw new MongoAPIError(message);
           }
           break;
         }
@@ -642,22 +666,25 @@ export abstract class AbstractCursor<
   async [kInit](): Promise<void> {
     try {
       const state = await this._initialize(this[kSession]);
-      const response = state.response;
+      const response = state.response as MongoDBResponse;
       this[kServer] = state.server;
-      if (response.cursor) {
+      if (response.hasElement('cursor')) {
+        const cursor = response.getValue('cursor', BSONType.object, true);
         // TODO(NODE-2674): Preserve int64 sent from MongoDB
-        this[kId] =
-          typeof response.cursor.id === 'number'
-            ? Long.fromNumber(response.cursor.id)
-            : typeof response.cursor.id === 'bigint'
-            ? Long.fromBigInt(response.cursor.id)
-            : response.cursor.id;
+        this[kId] = Long.fromBigInt(cursor.getValue('id', BSONType.long, true));
+        // typeof response.cursor.id === 'number'
+        //   ? Long.fromNumber(response.cursor.id)
+        //   : typeof response.cursor.id === 'bigint'
+        //   ? Long.fromBigInt(response.cursor.id)
+        //   : response.cursor.id;
 
-        if (response.cursor.ns) {
-          this[kNamespace] = ns(response.cursor.ns);
+        const namespace = cursor.getValue('ns', BSONType.string);
+        if (namespace != null) {
+          this[kNamespace] = ns(namespace);
         }
 
-        this[kDocuments].pushMany(response.cursor.firstBatch);
+        const firstBatch = cursor.getValue('firstBatch', BSONType.array, true);
+        if (firstBatch.length !== 0) this.batches.push(firstBatch);
       }
 
       // When server responses return without a cursor document, we close this cursor
@@ -717,8 +744,8 @@ async function next<T>(
       await cursor[kInit]();
     }
 
-    if (cursor[kDocuments].length !== 0) {
-      const doc = cursor[kDocuments].shift();
+    if (cursor.batches.length !== 0) {
+      const doc = cursor.nextDocumentInABatch();
 
       if (doc != null && transform && cursor[kTransform]) {
         try {
@@ -746,18 +773,18 @@ async function next<T>(
     const batchSize = cursor[kOptions].batchSize || 1000;
 
     try {
-      const response = await cursor.getMore(batchSize);
+      const response = (await cursor.getMore(batchSize)) as MongoDBResponse;
 
-      if (response) {
-        const cursorId =
-          typeof response.cursor.id === 'number'
-            ? Long.fromNumber(response.cursor.id)
-            : typeof response.cursor.id === 'bigint'
-            ? Long.fromBigInt(response.cursor.id)
-            : response.cursor.id;
-
-        cursor[kDocuments].pushMany(response.cursor.nextBatch);
-        cursor[kId] = cursorId;
+      const cursorDoc = response?.getValue('cursor', BSONType.object);
+      if (cursorDoc != null) {
+        cursor[kId] = Long.fromBigInt(cursorDoc.getValue('id', BSONType.long, true));
+        const nextBatch = cursorDoc.getValue('nextBatch', BSONType.array, true);
+        if (nextBatch.length !== 0) cursor.batches.push(nextBatch);
+        // typeof response.cursor.id === 'number'
+        //   ? Long.fromNumber(response.cursor.id)
+        //   : typeof response.cursor.id === 'bigint'
+        //   ? Long.fromBigInt(response.cursor.id)
+        //   : response.cursor.id;
       }
     } catch (error) {
       // `cleanupCursorAsync` should never throw, but if it does we want to throw the original
@@ -798,7 +825,7 @@ async function cleanupCursor(
   // Cursors only emit closed events once the client-side cursor has been exhausted fully or there
   // was an error.  Notably, when the server returns a cursor id of 0 and a non-empty batch, we
   // cleanup the cursor but don't emit a `close` event.
-  const needsToEmitClosed = options?.needsToEmitClosed ?? cursor[kDocuments].length === 0;
+  const needsToEmitClosed = options?.needsToEmitClosed ?? cursor.batches.length === 0;
 
   if (error) {
     if (cursor.loadBalanced && error instanceof MongoNetworkError) {

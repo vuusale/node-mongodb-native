@@ -290,6 +290,8 @@ export type { ClientMetadata, ClientMetadataOptions } from './cmap/handshake/cli
 export type { ConnectionPoolMetrics } from './cmap/metrics';
 export type { StreamDescription, StreamDescriptionOptions } from './cmap/stream_description';
 export type { CompressorName } from './cmap/wire_protocol/compression';
+export type { BSONTypeMap, OnDemandDocument } from './cmap/wire_protocol/on_demand_document';
+export type { MongoDBResponse } from './cmap/wire_protocol/server_response';
 export type { CollectionOptions, CollectionPrivate, ModifyResult } from './collection';
 export type {
   COMMAND_FAILED,

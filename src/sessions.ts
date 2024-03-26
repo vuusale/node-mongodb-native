@@ -3,6 +3,7 @@ import { promisify } from 'util';
 import { Binary, type Document, Long, type Timestamp } from './bson';
 import type { CommandOptions, Connection } from './cmap/connection';
 import { ConnectionPoolMetrics } from './cmap/metrics';
+import { type MongoDBResponse } from './cmap/wire_protocol/server_response';
 import { isSharded } from './cmap/wire_protocol/shared';
 import { PINNED, UNPINNED } from './constants';
 import type { AbstractCursor } from './cursor/abstract_cursor';
@@ -1037,24 +1038,25 @@ export function applySession(
   return;
 }
 
-export function updateSessionFromResponse(session: ClientSession, document: Document): void {
-  if (document.$clusterTime) {
-    _advanceClusterTime(session, document.$clusterTime);
+export function updateSessionFromResponse(session: ClientSession, response: MongoDBResponse): void {
+  const { $clusterTime, operationTime, recoveryToken } = response;
+  if ($clusterTime) {
+    _advanceClusterTime(session, $clusterTime);
   }
 
-  if (document.operationTime && session && session.supports.causalConsistency) {
-    session.advanceOperationTime(document.operationTime);
+  if (operationTime && session.supports.causalConsistency) {
+    session.advanceOperationTime(operationTime);
   }
 
-  if (document.recoveryToken && session && session.inTransaction()) {
-    session.transaction._recoveryToken = document.recoveryToken;
+  if (recoveryToken && session && session.inTransaction()) {
+    session.transaction._recoveryToken = recoveryToken;
   }
 
   if (session?.[kSnapshotEnabled] && session[kSnapshotTime] == null) {
-    // find and aggregate commands return atClusterTime on the cursor
-    // distinct includes it in the response body
-    const atClusterTime = document.cursor?.atClusterTime || document.atClusterTime;
+    const atClusterTime = response.atClusterTime;
     if (atClusterTime) {
+      // find and aggregate commands return atClusterTime on the cursor
+      // distinct includes it in the response body
       session[kSnapshotTime] = atClusterTime;
     }
   }

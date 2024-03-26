@@ -435,7 +435,7 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
    * Pool reset is handled by incrementing the pool's generation count. Any existing connection of a
    * previous generation will eventually be pruned during subsequent checkouts.
    */
-  clear(options: { serviceId?: ObjectId; interruptInUseConnections?: boolean } = {}): void {
+  clear(options: { serviceId?: ObjectId | null; interruptInUseConnections?: boolean } = {}): void {
     if (this.closed) {
       return;
     }
@@ -678,7 +678,7 @@ export class ConnectionPool extends TypedEventEmitter<ConnectionPoolEvents> {
           ConnectionPool.CONNECTION_CLOSED,
           new ConnectionClosedEvent(
             this,
-            { id: connectOptions.id, serviceId: undefined },
+            { id: connectOptions.id, serviceId: null },
             'error',
             // TODO(NODE-5192): Remove this cast
             error as MongoError

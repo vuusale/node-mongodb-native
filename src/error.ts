@@ -1,4 +1,5 @@
 import type { Document } from './bson';
+import { type MongoDBResponse } from './cmap/wire_protocol/server_response';
 import type { TopologyVersion } from './sdam/server_description';
 import type { TopologyDescription } from './sdam/topology_description';
 
@@ -219,28 +220,42 @@ export class MongoServerError extends MongoError {
    *
    * @public
    **/
-  constructor(message: ErrorDescription) {
-    super(message.message || message.errmsg || message.$err || 'n/a');
+  constructor(message: ErrorDescription, options?: { cause?: Error }) {
+    super(message.errorMessage, options);
     if (message.errorLabels) {
       this[kErrorLabels] = new Set(message.errorLabels);
     }
 
+    this.code = message.errorCode;
     this.errorResponse = message;
 
-    for (const name in message) {
+    const todoObject = message.toObject();
+    for (const name of Object.keys(todoObject)) {
       if (
         name !== 'errorLabels' &&
         name !== 'errmsg' &&
         name !== 'message' &&
-        name !== 'errorResponse'
+        name !== 'errorResponse' &&
+        name !== 'code'
       ) {
-        this[name] = message[name];
+        this[name] = todoObject[name];
       }
     }
   }
 
   override get name(): string {
     return 'MongoServerError';
+  }
+}
+
+/** @public */
+export class MongoWriteError extends MongoServerError {
+  constructor(message: Document, options?: { cause?: Error }) {
+    super(message.writeErrors[0], options);
+    this.writeErrors = message.writeErrors;
+  }
+  override get name(): string {
+    return 'MongoWriteError';
   }
 }
 
@@ -963,8 +978,8 @@ export class MongoCompatibilityError extends MongoAPIError {
    *
    * @public
    **/
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: { cause?: Error }) {
+    super(message, options);
   }
 
   override get name(): string {
@@ -1094,19 +1109,6 @@ export class MongoServerSelectionError extends MongoSystemError {
   }
 }
 
-function makeWriteConcernResultObject(input: any) {
-  const output = Object.assign({}, input);
-
-  if (output.ok === 0) {
-    output.ok = 1;
-    delete output.errmsg;
-    delete output.code;
-    delete output.codeName;
-  }
-
-  return output;
-}
-
 /**
  * An error thrown when the server reports a writeConcernError
  * @public
@@ -1136,7 +1138,7 @@ export class MongoWriteConcernError extends MongoServerError {
     this.errInfo = message.errInfo;
 
     if (result != null) {
-      this.result = makeWriteConcernResultObject(result);
+      this.result = result.getFullBSON();
     }
   }
 

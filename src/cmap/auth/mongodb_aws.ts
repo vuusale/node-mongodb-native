@@ -94,7 +94,10 @@ export class MongoDBAWS extends AuthProvider {
 
     const saslStartResponse = await connection.command(ns(`${db}.$cmd`), saslStart, undefined);
 
-    const serverResponse = BSON.deserialize(saslStartResponse.payload.buffer, bsonOptions) as {
+    const serverResponse = BSON.deserialize(
+      saslStartResponse.payloadAsBinary.buffer,
+      bsonOptions
+    ) as {
       s: Binary;
       h: string;
     };

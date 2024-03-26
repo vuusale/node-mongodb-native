@@ -9,6 +9,7 @@ import {
 import { calculateDurationInMs, deepCopy } from '../utils';
 import { OpMsgRequest, type OpQueryRequest, type WriteProtocolMessageType } from './commands';
 import type { Connection } from './connection';
+import { type MongoDBResponse } from './wire_protocol/server_response';
 
 /**
  * An event indicating the start of a given command
@@ -30,7 +31,7 @@ export class CommandStartedEvent {
    * from the server on 4.2+.
    */
   serverConnectionId: bigint | null;
-  serviceId?: ObjectId;
+  serviceId: ObjectId | null;
   /** @internal */
   name = COMMAND_STARTED;
 
@@ -90,7 +91,7 @@ export class CommandSucceededEvent {
   duration: number;
   commandName: string;
   reply: unknown;
-  serviceId?: ObjectId;
+  serviceId: ObjectId | null;
   /** @internal */
   name = COMMAND_SUCCEEDED;
 
@@ -120,7 +121,8 @@ export class CommandSucceededEvent {
     this.requestId = command.requestId;
     this.commandName = commandName;
     this.duration = calculateDurationInMs(started);
-    this.reply = maybeRedact(commandName, cmd, extractReply(command, reply));
+    if (shouldRedact(commandName, cmd)) this.reply = {};
+    else this.reply = reply?.getFullBSON();
     this.serverConnectionId = serverConnectionId;
   }
 
@@ -148,7 +150,7 @@ export class CommandFailedEvent {
   duration: number;
   commandName: string;
   failure: Error;
-  serviceId?: ObjectId;
+  serviceId: ObjectId | null;
   /** @internal */
   name = COMMAND_FAILED;
 
@@ -209,13 +211,12 @@ const HELLO_COMMANDS = new Set(['hello', LEGACY_HELLO_COMMAND, LEGACY_HELLO_COMM
 
 // helper methods
 const extractCommandName = (commandDoc: Document) => Object.keys(commandDoc)[0];
-const namespace = (command: OpQueryRequest) => command.ns;
 const collectionName = (command: OpQueryRequest) => command.ns.split('.')[1];
-const maybeRedact = (commandName: string, commandDoc: Document, result: Error | Document) =>
+const shouldRedact = (commandName: string, commandDoc: Document) =>
   SENSITIVE_COMMANDS.has(commandName) ||
-  (HELLO_COMMANDS.has(commandName) && commandDoc.speculativeAuthenticate)
-    ? {}
-    : result;
+  (HELLO_COMMANDS.has(commandName) && commandDoc.speculativeAuthenticate);
+const maybeRedact = (commandName: string, commandDoc: Document, result: Error | Document) =>
+  shouldRedact(commandName, commandDoc) ? {} : result;
 
 const LEGACY_FIND_QUERY_MAP: { [key: string]: string } = {
   $query: 'filter',
@@ -304,30 +305,6 @@ function extractCommand(command: WriteProtocolMessageType): Document {
     clonedCommand[k] = deepCopy((command as unknown as Record<string, unknown>)[k]);
   }
   return command.query ? clonedQuery : clonedCommand;
-}
-
-function extractReply(command: WriteProtocolMessageType, reply?: Document) {
-  if (!reply) {
-    return reply;
-  }
-
-  if (command instanceof OpMsgRequest) {
-    return deepCopy(reply.result ? reply.result : reply);
-  }
-
-  // is this a legacy find command?
-  if (command.query && command.query.$query != null) {
-    return {
-      ok: 1,
-      cursor: {
-        id: deepCopy(reply.cursorId),
-        ns: namespace(command),
-        firstBatch: deepCopy(reply.documents)
-      }
-    };
-  }
-
-  return deepCopy(reply.result ? reply.result : reply);
 }
 
 function extractConnectionDetails(connection: Connection) {

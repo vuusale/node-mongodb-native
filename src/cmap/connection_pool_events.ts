@@ -146,7 +146,7 @@ export class ConnectionClosedEvent extends ConnectionPoolMonitoringEvent {
   connectionId: number | '<monitor>';
   /** The reason the connection was closed */
   reason: string;
-  serviceId?: ObjectId;
+  serviceId: ObjectId | null;
   /** @internal */
   name = CONNECTION_CLOSED;
   /** @internal */

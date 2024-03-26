@@ -429,7 +429,7 @@ export class TypedEventEmitter<Events extends EventsDescription> extends EventEm
   emitAndLogHeartbeat<EventKey extends keyof Events>(
     event: EventKey | symbol,
     topologyId: number,
-    serverConnectionId?: number | '<monitor>',
+    serverConnectionId?: bigint | null,
     ...args: Parameters<Events[EventKey]>
   ): void {
     this.emit(event, ...args);

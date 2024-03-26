@@ -10,6 +10,7 @@ import { promisify } from 'util';
 import { type Document, ObjectId, resolveBSONOptions } from './bson';
 import type { Connection } from './cmap/connection';
 import { MAX_SUPPORTED_WIRE_VERSION } from './cmap/wire_protocol/constants';
+import { MongoDBResponse } from './cmap/wire_protocol/server_response';
 import type { Collection } from './collection';
 import { LEGACY_HELLO_COMMAND } from './constants';
 import type { AbstractCursor } from './cursor/abstract_cursor';
@@ -44,6 +45,17 @@ export type Callback<T = any> = (error?: AnyError, result?: T) => void;
 
 export type AnyOptions = Document;
 
+export const EMPTY_UINT8ARRAY = new Uint8Array(0);
+export const EMPTY_MESSAGE = new Uint8Array([
+  ...[34, 0, 0, 0], // length
+  ...[0, 0, 0, 0], // requestId
+  ...[0, 0, 0, 0], // responseTo
+  ...[221, 7, 0, 0], // opCode (2013, op_msg)
+  ...[0, 0, 0, 0], // flagBits
+  0, //payload
+  ...[13, 0, 0, 0, 16, 111, 107, 0, 1, 0, 0, 0, 0] // ok:1
+]);
+
 export const ByteUtils = {
   toLocalBufferType(this: void, buffer: Buffer | Uint8Array): Buffer {
     return Buffer.isBuffer(buffer)
@@ -55,8 +67,22 @@ export const ByteUtils = {
     return ByteUtils.toLocalBufferType(seqA).equals(seqB);
   },
 
-  compare(this: void, seqA: Uint8Array, seqB: Uint8Array) {
-    return ByteUtils.toLocalBufferType(seqA).compare(seqB);
+  compare(
+    this: void,
+    source: Uint8Array,
+    target: Uint8Array,
+    targetStart?: number,
+    targetEnd?: number,
+    sourceStart?: number,
+    sourceEnd?: number
+  ) {
+    return ByteUtils.toLocalBufferType(source).compare(
+      target,
+      targetStart,
+      targetEnd,
+      sourceStart,
+      sourceEnd
+    );
   },
 
   toBase64(this: void, uint8array: Uint8Array) {
@@ -1285,18 +1311,18 @@ export async function once<T>(ee: EventEmitter, name: string): Promise<T> {
   }
 }
 
-export function maybeAddIdToDocuments(
-  coll: Collection,
+export function maybeAddIdToDocuments<T extends Document>(
+  coll: Collection<T>,
   docs: Document[],
   options: { forceServerObjectId?: boolean }
 ): Document[];
-export function maybeAddIdToDocuments(
-  coll: Collection,
+export function maybeAddIdToDocuments<T extends Document>(
+  coll: Collection<T>,
   docs: Document,
   options: { forceServerObjectId?: boolean }
 ): Document;
-export function maybeAddIdToDocuments(
-  coll: Collection,
+export function maybeAddIdToDocuments<T extends Document>(
+  coll: Collection<T>,
   docOrDocs: Document[] | Document,
   options: { forceServerObjectId?: boolean }
 ): Document[] | Document {

@@ -1,4 +1,4 @@
-import type { Document, Long, Timestamp } from '../bson';
+import { BSONType, type Document, type Long, type Timestamp } from '../bson';
 import {
   ChangeStream,
   type ChangeStreamDocument,
@@ -6,6 +6,7 @@ import {
   type OperationTime,
   type ResumeToken
 } from '../change_stream';
+import { type MongoDBResponse } from '../cmap/wire_protocol/server_response';
 import { INIT, RESPONSE } from '../constants';
 import type { MongoClient } from '../mongo_client';
 import type { TODO_NODE_3286 } from '../mongo_types';
@@ -44,7 +45,7 @@ export class ChangeStreamCursor<
   TChange extends Document = ChangeStreamDocument<TSchema>
 > extends AbstractCursor<TChange, ChangeStreamEvents> {
   _resumeToken: ResumeToken;
-  startAtOperationTime?: OperationTime;
+  startAtOperationTime?: OperationTime | null;
   hasReceived?: boolean;
   resumeAfter: ResumeToken;
   startAfter: ResumeToken;
@@ -120,15 +121,23 @@ export class ChangeStreamCursor<
     this.hasReceived = true;
   }
 
-  _processBatch(response: ChangeStreamAggregateRawResult<TChange>): void {
-    const cursor = response.cursor;
-    if (cursor.postBatchResumeToken) {
-      this.postBatchResumeToken = response.cursor.postBatchResumeToken;
+  _processBatch(response: MongoDBResponse): void {
+    const cursor = response.getValue('cursor', BSONType.object, true);
+    if (cursor.hasElement('postBatchResumeToken')) {
+      const postBatchResumeToken = cursor
+        .getValue('postBatchResumeToken', BSONType.object)
+        ?.toObject();
 
-      const batch =
-        'firstBatch' in response.cursor ? response.cursor.firstBatch : response.cursor.nextBatch;
-      if (batch.length === 0) {
-        this.resumeToken = cursor.postBatchResumeToken;
+      this.postBatchResumeToken = postBatchResumeToken;
+
+      const batchLength =
+        (
+          cursor.getValue('firstBatch', BSONType.array) ??
+          cursor.getValue('nextBatch', BSONType.array)
+        )?.length ?? 0;
+
+      if (batchLength === 0) {
+        this.resumeToken = postBatchResumeToken;
       }
     }
   }
@@ -146,10 +155,10 @@ export class ChangeStreamCursor<
       session
     });
 
-    const response = await executeOperation<
-      TODO_NODE_3286,
-      ChangeStreamAggregateRawResult<TChange>
-    >(session.client, aggregateOperation);
+    const response = await executeOperation<TODO_NODE_3286, MongoDBResponse>(
+      session.client,
+      aggregateOperation
+    );
 
     const server = aggregateOperation.server;
     this.maxWireVersion = maxWireVersion(server);
@@ -176,7 +185,7 @@ export class ChangeStreamCursor<
     const response = await super.getMore(batchSize);
 
     this.maxWireVersion = maxWireVersion(this.server);
-    this._processBatch(response as ChangeStreamAggregateRawResult<TChange>);
+    this._processBatch(response);
 
     this.emit(ChangeStream.MORE, response);
     this.emit(ChangeStream.RESPONSE);

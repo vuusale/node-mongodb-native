@@ -263,14 +263,16 @@ export class Db {
    */
   async command(command: Document, options?: RunCommandOptions): Promise<Document> {
     // Intentionally, we do not inherit options from parent for this operation.
-    return executeOperation(
-      this.client,
-      new RunCommandOperation(this, command, {
-        ...resolveBSONOptions(options),
-        session: options?.session,
-        readPreference: options?.readPreference
-      })
-    );
+    return (
+      await executeOperation(
+        this.client,
+        new RunCommandOperation(this, command, {
+          ...resolveBSONOptions(options),
+          session: options?.session,
+          readPreference: options?.readPreference
+        })
+      )
+    ).toObject();
   }
 
   /**

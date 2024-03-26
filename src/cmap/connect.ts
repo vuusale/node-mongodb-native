@@ -31,6 +31,7 @@ import {
   MIN_SUPPORTED_SERVER_VERSION,
   MIN_SUPPORTED_WIRE_VERSION
 } from './wire_protocol/constants';
+import { type MongoDBResponse } from './wire_protocol/server_response';
 
 /** @public */
 export type Stream = Socket | TLSSocket;
@@ -57,7 +58,7 @@ export function makeConnection(options: ConnectionOptions, socket: Stream): Conn
   return new ConnectionType(socket, options);
 }
 
-function checkSupportedServer(hello: Document, options: ConnectionOptions) {
+function checkSupportedServer(hello: MongoDBResponse, options: ConnectionOptions): void {
   const maxWireVersion = Number(hello.maxWireVersion);
   const minWireVersion = Number(hello.minWireVersion);
   const serverVersionHighEnough =
@@ -67,19 +68,19 @@ function checkSupportedServer(hello: Document, options: ConnectionOptions) {
 
   if (serverVersionHighEnough) {
     if (serverVersionLowEnough) {
-      return null;
+      return;
     }
 
     const message = `Server at ${options.hostAddress} reports minimum wire version ${JSON.stringify(
       hello.minWireVersion
     )}, but this version of the Node.js Driver requires at most ${MAX_SUPPORTED_WIRE_VERSION} (MongoDB ${MAX_SUPPORTED_SERVER_VERSION})`;
-    return new MongoCompatibilityError(message);
+    throw new MongoCompatibilityError(message);
   }
 
   const message = `Server at ${options.hostAddress} reports maximum wire version ${
     JSON.stringify(hello.maxWireVersion) ?? 0
   }, but this version of the Node.js Driver requires at least ${MIN_SUPPORTED_WIRE_VERSION} (MongoDB ${MIN_SUPPORTED_SERVER_VERSION})`;
-  return new MongoCompatibilityError(message);
+  throw new MongoCompatibilityError(message);
 }
 
 export async function performInitialHandshake(
@@ -111,20 +112,9 @@ export async function performInitialHandshake(
 
   const start = new Date().getTime();
   const response = await conn.command(ns('admin.$cmd'), handshakeDoc, handshakeOptions);
+  conn.helloOk = response.helloOk;
 
-  if (!('isWritablePrimary' in response)) {
-    // Provide hello-style response document.
-    response.isWritablePrimary = response[LEGACY_HELLO_COMMAND];
-  }
-
-  if (response.helloOk) {
-    conn.helloOk = true;
-  }
-
-  const supportedServerErr = checkSupportedServer(response, options);
-  if (supportedServerErr) {
-    throw supportedServerErr;
-  }
+  checkSupportedServer(response, options);
 
   if (options.loadBalanced) {
     if (!response.serviceId) {

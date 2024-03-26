@@ -19,8 +19,7 @@ import {
   MongoNetworkTimeoutError,
   MongoParseError,
   MongoServerError,
-  MongoUnexpectedServerResponseError,
-  MongoWriteConcernError
+  MongoUnexpectedServerResponseError
 } from '../error';
 import type { ServerApi, SupportedNodeConnectionOptions } from '../mongo_client';
 import { type MongoClientAuthProviders } from '../mongo_client_auth_providers';
@@ -32,7 +31,7 @@ import { applySession, type ClientSession, updateSessionFromResponse } from '../
 import {
   BufferPool,
   calculateDurationInMs,
-  type Callback,
+  EMPTY_MESSAGE,
   HostAddress,
   maxWireVersion,
   type MongoDBNamespace,
@@ -51,17 +50,18 @@ import {
 import {
   OpCompressedRequest,
   OpMsgRequest,
-  type OpMsgResponse,
   OpQueryRequest,
-  type OpQueryResponse,
   type WriteProtocolMessageType
 } from './commands';
 import type { Stream } from './connect';
 import type { ClientMetadata } from './handshake/client_metadata';
 import { StreamDescription, type StreamDescriptionOptions } from './stream_description';
-import { type CompressorName, decompressResponse } from './wire_protocol/compression';
+import { type CompressorName } from './wire_protocol/compression';
 import { onData } from './wire_protocol/on_data';
+import { MongoDBResponse } from './wire_protocol/server_response';
 import { getReadPreference, isSharded } from './wire_protocol/shared';
+
+let EMPTY_RESPONSE: MongoDBResponse;
 
 /** @internal */
 export interface CommandOptions extends BSONSerializeOptions {
@@ -230,7 +230,11 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
     this.socket.on('timeout', this.onTimeout.bind(this));
   }
 
-  public get hello() {
+  public get serverConnectionId() {
+    return this.description.serverConnectionId;
+  }
+
+  public get hello(): Document | null {
     return this.description.hello;
   }
 
@@ -240,8 +244,8 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
     Object.freeze(this.description);
   }
 
-  public get serviceId(): ObjectId | undefined {
-    return this.hello?.serviceId;
+  public get serviceId(): ObjectId | null {
+    return this.hello?.serviceId ?? null;
   }
 
   public get loadBalanced(): boolean {
@@ -257,11 +261,7 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
   }
 
   private get supportsOpMsg(): boolean {
-    return (
-      this.description != null &&
-      maxWireVersion(this) >= 6 &&
-      !this.description.__nodejs_mock_server__
-    );
+    return this.description != null && maxWireVersion(this) >= 6;
   }
 
   private get shouldEmitAndLogCommand(): boolean {
@@ -426,7 +426,8 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
       });
 
       if (options.noResponse) {
-        yield { ok: 1 };
+        EMPTY_RESPONSE ??= await MongoDBResponse.create(EMPTY_MESSAGE);
+        yield EMPTY_RESPONSE;
         return;
       }
 
@@ -434,23 +435,18 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
 
       for await (const response of this.readMany()) {
         this.socket.setTimeout(0);
-        response.parse(options);
 
-        const [document] = response.documents;
-
-        if (!Buffer.isBuffer(document)) {
-          const { session } = options;
-          if (session) {
-            updateSessionFromResponse(session, document);
-          }
-
-          if (document.$clusterTime) {
-            this.clusterTime = document.$clusterTime;
-            this.emit(Connection.CLUSTER_TIME_RECEIVED, document.$clusterTime);
-          }
+        if (options.session != null) {
+          updateSessionFromResponse(options.session, response);
         }
 
-        yield document;
+        const clusterTime = response.$clusterTime;
+        if (clusterTime) {
+          this.clusterTime = clusterTime;
+          this.emit(Connection.CLUSTER_TIME_RECEIVED, clusterTime);
+        }
+
+        yield response;
         this.throwIfAborted();
 
         if (typeof options.socketTimeoutMS === 'number') {
@@ -483,18 +479,11 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
       );
     }
 
-    let document;
+    let document: MongoDBResponse | undefined = undefined;
     try {
       this.throwIfAborted();
       for await (document of this.sendWire(message, options)) {
-        if (!Buffer.isBuffer(document) && document.writeConcernError) {
-          throw new MongoWriteConcernError(document.writeConcernError, document);
-        }
-
-        if (
-          !Buffer.isBuffer(document) &&
-          (document.ok === 0 || document.$err || document.errmsg || document.code)
-        ) {
+        if (document.isError) {
           throw new MongoServerError(document);
         }
 
@@ -519,35 +508,13 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
       }
     } catch (error) {
       if (this.shouldEmitAndLogCommand) {
-        if (error.name === 'MongoWriteConcernError') {
-          this.emitAndLogCommand(
-            this.monitorCommands,
-            Connection.COMMAND_SUCCEEDED,
-            message.databaseName,
-            this.established,
-            new CommandSucceededEvent(
-              this,
-              message,
-              options.noResponse ? undefined : document,
-              started,
-              this.description.serverConnectionId
-            )
-          );
-        } else {
-          this.emitAndLogCommand(
-            this.monitorCommands,
-            Connection.COMMAND_FAILED,
-            message.databaseName,
-            this.established,
-            new CommandFailedEvent(
-              this,
-              message,
-              error,
-              started,
-              this.description.serverConnectionId
-            )
-          );
-        }
+        this.emitAndLogCommand(
+          this.monitorCommands,
+          Connection.COMMAND_FAILED,
+          message.databaseName,
+          this.established,
+          new CommandFailedEvent(this, message, error, started, this.description.serverConnectionId)
+        );
       }
       throw error;
     }
@@ -557,7 +524,7 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
     ns: MongoDBNamespace,
     command: Document,
     options: CommandOptions = {}
-  ): Promise<Document> {
+  ): Promise<MongoDBResponse> {
     this.throwIfAborted();
     for await (const document of this.sendCommand(ns, command, options)) {
       return document;
@@ -569,17 +536,18 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
     ns: MongoDBNamespace,
     command: Document,
     options: CommandOptions,
-    replyListener: Callback
+    onSuccess: (response: MongoDBResponse) => void,
+    onError: (error: Error) => void
   ) {
     const exhaustLoop = async () => {
       this.throwIfAborted();
       for await (const reply of this.sendCommand(ns, command, options)) {
-        replyListener(undefined, reply);
+        onSuccess(reply);
         this.throwIfAborted();
       }
       throw new MongoUnexpectedServerResponseError('Server ended moreToCome unexpectedly');
     };
-    exhaustLoop().catch(replyListener);
+    exhaustLoop().catch(onError);
   }
 
   private throwIfAborted() {
@@ -607,7 +575,7 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
     const buffer = Buffer.concat(await finalCommand.toBin());
 
     if (this.socket.write(buffer)) return;
-    return once(this.socket, 'drain');
+    return await once(this.socket, 'drain');
   }
 
   /**
@@ -619,11 +587,11 @@ export class Connection extends TypedEventEmitter<ConnectionEvents> {
    *
    * Note that `for-await` loops call `return` automatically when the loop is exited.
    */
-  private async *readMany(): AsyncGenerator<OpMsgResponse | OpQueryResponse> {
+  private async *readMany(): AsyncGenerator<MongoDBResponse> {
     try {
       this.dataEvents = onData(this.messageStream);
       for await (const message of this.dataEvents) {
-        const response = await decompressResponse(message);
+        const response = await MongoDBResponse.create(message);
         yield response;
 
         if (!response.moreToCome) {
@@ -689,7 +657,7 @@ export class CryptoConnection extends Connection {
     ns: MongoDBNamespace,
     cmd: Document,
     options: CommandOptions
-  ): Promise<Document> {
+  ): Promise<MongoDBResponse> {
     const { autoEncrypter } = this;
     if (!autoEncrypter) {
       throw new MongoMissingDependencyError('No AutoEncrypter available for encryption');
@@ -698,7 +666,7 @@ export class CryptoConnection extends Connection {
     const serverWireVersion = maxWireVersion(this);
     if (serverWireVersion === 0) {
       // This means the initial handshake hasn't happened yet
-      return super.command(ns, cmd, options);
+      return await super.command(ns, cmd, options);
     }
 
     if (serverWireVersion < 8) {
@@ -734,6 +702,7 @@ export class CryptoConnection extends Connection {
 
     const response = await super.command(ns, encrypted, options);
 
-    return autoEncrypter.decrypt(response, options);
+    // @ts-expect-error: ahh!
+    return await autoEncrypter.decrypt(response, options);
   }
 }

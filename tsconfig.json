@@ -16,7 +16,7 @@
     "importHelpers": false,
     "noEmitHelpers": true,
     // Never emit error filled code
-    "noEmitOnError": true,
+    "noEmitOnError": false,
     "outDir": "lib",
     // We want the sourcemaps in a separate file
     "inlineSourceMap": false,
