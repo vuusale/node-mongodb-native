@@ -1,6 +1,6 @@
 import type { Document } from '../bson';
 import type { Collection } from '../collection';
-import { MongoCompatibilityError, MongoInvalidArgumentError, MongoServerError } from '../error';
+import { MongoCompatibilityError, MongoInvalidArgumentError, MongoServerError, MongoWriteError } from '../error';
 import type { InferIdType, TODO_NODE_3286 } from '../mongo_types';
 import type { Server } from '../sdam/server';
 import type { ClientSession } from '../sessions';
@@ -144,11 +144,12 @@ export class UpdateOneOperation extends UpdateOperation {
     server: Server,
     session: ClientSession | undefined
   ): Promise<UpdateResult> {
-    const res = await super.execute(server, session);
-    if (this.explain != null) return res as TODO_NODE_3286;
-    if (res.code) throw new MongoServerError(res);
-    if (res.writeErrors) throw new MongoServerError(res.writeErrors[0]);
+    const res0 = await super.execute(server, session);
+    if (this.explain != null) return res0 as TODO_NODE_3286;
+    // if (res.code) throw new MongoServerError(res);
+    if (res0.hasElement('writeErrors')) throw new MongoWriteError(res0.toObject());
 
+    const res = res0.toObject();
     return {
       acknowledged: this.writeConcern?.w !== 0,
       modifiedCount: res.nModified ?? res.n,

@@ -1,7 +1,7 @@
 import type { Document } from '../bson';
 import type { BulkWriteOptions } from '../bulk/common';
 import type { Collection } from '../collection';
-import { MongoInvalidArgumentError, MongoServerError } from '../error';
+import { MongoInvalidArgumentError, MongoServerError, MongoWriteError } from '../error';
 import type { InferIdType } from '../mongo_types';
 import type { Server } from '../sdam/server';
 import type { ClientSession } from '../sessions';
@@ -77,10 +77,10 @@ export class InsertOneOperation extends InsertOperation {
     session: ClientSession | undefined
   ): Promise<InsertOneResult> {
     const res = await super.execute(server, session);
-    if (res.code) throw new MongoServerError(res);
-    if (res.writeErrors) {
+    // if (res.code) throw new MongoServerError(res);
+    if (res.hasElement('writeErrors')) {
       // This should be a WriteError but we can't change it now because of error hierarchy
-      throw new MongoServerError(res.writeErrors[0]);
+      throw new MongoWriteError(res.toObject());
     }
 
     return {

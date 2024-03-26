@@ -78,7 +78,9 @@ export class FindCursor<TSchema = any> extends AbstractCursor<TSchema> {
     const response = await executeOperation(this.client, findOperation);
 
     // the response is not a cursor when `explain` is enabled
-    this[kNumReturned] = response.cursor?.firstBatch?.length;
+    this[kNumReturned] =
+      response.getValue('cursor', BSONType.object)?.getValue('firstBatch', BSONType.array)
+        ?.length ?? 0; // response.cursor?.firstBatch?.length;
 
     // TODO: NODE-2882
     return { server: findOperation.server, session, response };

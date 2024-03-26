@@ -87,13 +87,16 @@ export class MongoDBResponse extends OnDemandDocument {
     }
 
     if (opCode === OP_REPLY) {
-      return new this(
-        requestId,
-        responseTo,
-        false,
-        false,
-        false,
-        MongoDBResponse.opReply(offset, message)
+      return new Proxy(
+        new this(
+          requestId,
+          responseTo,
+          false,
+          false,
+          false,
+          MongoDBResponse.opReply(offset, message)
+        ),
+        handler
       );
     }
 
@@ -123,9 +126,9 @@ export class MongoDBResponse extends OnDemandDocument {
   then = null; // temp
 
   public getFullBSON(freshCopy = false) {
-    if (freshCopy) return BSON.deserialize(this.bson);
-    this.fullBSON ??= BSON.deserialize(this.bson);
-    return this.fullBSON;
+    // if (freshCopy) return BSON.deserialize(this.bson);
+    // if (!('fullBSON' in this)) this.fullBSON ??= BSON.deserialize(this.bson);
+    return BSON.deserialize(this.bson);
   }
 
   public get isError() {
@@ -223,6 +226,14 @@ export class MongoDBResponse extends OnDemandDocument {
 
   public get connectionId(): bigint | null {
     return this.getValue('connectionId', BSONType.long);
+  }
+
+  public get speculativeAuthenticate() {
+    return this.getValue('speculativeAuthenticate', BSONType.object)?.toObject();
+  }
+
+  public get saslSupportedMechs() {
+    return this.getValue('saslSupportedMechs', BSONType.array)?.toArray();
   }
 
   // GSSAPI expects string, AWS and SCRAM expect Binary. I have my doubts about the GSSAPI expectation

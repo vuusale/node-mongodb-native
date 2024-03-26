@@ -61,7 +61,9 @@ describe('Authentication Spec Prose Tests', function () {
           mechanisms: user.mechanisms
         }));
 
-        await Promise.all(createUserCommands.map(cmd => utilClient.db('admin').command(cmd)));
+        await utilClient.db('admin').command(createUserCommands[0]);
+        await utilClient.db('admin').command(createUserCommands[1]);
+        await utilClient.db('admin').command(createUserCommands[2]);
       });
 
       afterEach(async function () {

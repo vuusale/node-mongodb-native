@@ -99,7 +99,7 @@ export class ServerDescription {
     this.maxWireVersion = hello?.maxWireVersion ?? 0;
     this.roundTripTime = options?.roundTripTime ?? -1;
     this.lastUpdateTime = now();
-    this.lastWriteDate = hello?.lastWrite?.lastWriteDate ?? 0;
+    this.lastWriteDate = hello?.['lastWrite.lastWriteDate'] ?? 0;
     this.error = options.error ?? null;
     // TODO(NODE-2674): Preserve int64 sent from MongoDB
     this.topologyVersion = this.error?.topologyVersion ?? hello?.topologyVersion ?? null;
