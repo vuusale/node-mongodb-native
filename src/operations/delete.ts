@@ -110,7 +110,7 @@ export class DeleteOneOperation extends DeleteOperation {
     session: ClientSession | undefined
   ): Promise<DeleteResult> {
     const res: TODO_NODE_3286 = await super.execute(server, session);
-    if (this.explain) return res;
+    if (this.explain) return res.toObject(this.bsonOptions);
     if (res.code) throw new MongoServerError(res);
     if (res.writeErrors) throw new MongoServerError(res.writeErrors[0]);
 
@@ -130,7 +130,7 @@ export class DeleteManyOperation extends DeleteOperation {
     session: ClientSession | undefined
   ): Promise<DeleteResult> {
     const res: TODO_NODE_3286 = await super.execute(server, session);
-    if (this.explain) return res;
+    if (this.explain) return res.toObject(this.bsonOptions);
     if (res.code) throw new MongoServerError(res);
     if (res.writeErrors) throw new MongoServerError(res.writeErrors[0]);
 

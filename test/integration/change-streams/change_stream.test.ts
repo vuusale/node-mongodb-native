@@ -33,9 +33,9 @@ import {
 import { delay, filterForCommands } from '../shared';
 
 const initIteratorMode = async (cs: ChangeStream) => {
-  const kInit = getSymbolFrom(AbstractCursor.prototype, 'kInit');
   const initEvent = once(cs.cursor, 'init');
-  await cs.cursor[kInit]();
+  // @ts-expect-error: calling private method
+  await cs.cursor.abstractCursorInit();
   await initEvent;
   return;
 };

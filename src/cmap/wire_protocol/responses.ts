@@ -1,5 +1,13 @@
-import { type BSONSerializeOptions, BSONType, type Document, type Timestamp } from '../../bson';
+import {
+  type BSONSerializeOptions,
+  BSONType,
+  type Document,
+  Long,
+  type Timestamp
+} from '../../bson';
+import { MongoUnexpectedServerResponseError } from '../../error';
 import { type ClusterTime } from '../../sdam/common';
+import { type MongoDBNamespace, ns } from '../../utils';
 import { OnDemandDocument } from './on_demand/document';
 
 /** @internal */
@@ -105,5 +113,70 @@ export class MongoDBResponse extends OnDemandDocument {
     }
 
     return { utf8: { writeErrors: false } };
+  }
+}
+
+/** @internal */
+export class CursorResponse extends MongoDBResponse {
+  id: Long = Long.fromNumber(0); // Notably not Long.ZERO
+  ns?: MongoDBNamespace;
+  batch?: OnDemandDocument;
+  batchLength = 0;
+
+  iterated = 0;
+  iterator?: Generator<OnDemandDocument>;
+
+  static override empty = new CursorResponse(
+    Buffer.from(
+      'NwAAAANjdXJzb3IAKgAAABJpZAAAAAAAAAAAAAJucwABAAAAAARuZXh0QmF0Y2gABQAAAAAAAA==',
+      'base64'
+    )
+  );
+
+  constructor(b: Uint8Array, o?: number, a?: boolean) {
+    super(b, o, a);
+
+    if (this.isError) return;
+
+    const cursor = this.get('cursor', BSONType.object, true);
+
+    const id = cursor.get('id', BSONType.long, true);
+    this.id = new Long(Number(id & 0xffff_ffffn), Number((id >> 32n) & 0xffff_ffffn));
+
+    const namespace = cursor.get('ns', BSONType.string) ?? '';
+    if (namespace) this.ns = ns(namespace);
+
+    if (cursor.has('firstBatch')) this.batch = cursor.get('firstBatch', BSONType.array, true);
+    else if (cursor.has('nextBatch')) this.batch = cursor.get('nextBatch', BSONType.array, true);
+    else throw new MongoUnexpectedServerResponseError('Cursor document did not contain a batch');
+
+    this.batchLength = this.batch.size();
+  }
+
+  next(options: BSONSerializeOptions) {
+    this.iterator ??= this.batch?.valuesAs(BSONType.object);
+    const o = this.iterator?.next().value?.toObject(options) ?? null;
+    this.iterated++;
+    return o;
+  }
+
+  get postBatchResumeToken() {
+    return (
+      this.get('cursor', BSONType.object, true)
+        .get('postBatchResumeToken', BSONType.object)
+        ?.toObject({
+          promoteValues: false,
+          promoteLongs: false,
+          promoteBuffers: false
+        }) ?? null
+    );
+  }
+}
+
+const kExplain = Symbol('explain');
+export class ExplainResponse extends MongoDBResponse {
+  [kExplain] = true;
+  static isExplainResponse(value: unknown): value is ExplainResponse {
+    return value != null && typeof value === 'object' && kExplain in value;
   }
 }

@@ -1,4 +1,5 @@
 import type { Document } from '../bson';
+import { CursorResponse } from '../cmap/wire_protocol/responses';
 import type { Collection } from '../collection';
 import { type AbstractCursorOptions } from '../cursor/abstract_cursor';
 import { MongoCompatibilityError } from '../error';
@@ -376,7 +377,10 @@ export class ListIndexesOperation extends CommandOperation<Document> {
     return 'listIndexes' as const;
   }
 
-  override async execute(server: Server, session: ClientSession | undefined): Promise<Document> {
+  override async execute(
+    server: Server,
+    session: ClientSession | undefined
+  ): Promise<CursorResponse> {
     const serverWireVersion = maxWireVersion(server);
 
     const cursor = this.options.batchSize ? { batchSize: this.options.batchSize } : {};
@@ -389,7 +393,7 @@ export class ListIndexesOperation extends CommandOperation<Document> {
       command.comment = this.options.comment;
     }
 
-    return await super.executeCommand(server, session, command);
+    return await super.executeCommand(server, session, command, CursorResponse);
   }
 }
 

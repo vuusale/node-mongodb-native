@@ -841,7 +841,7 @@ describe('Change Stream prose tests', function () {
 
   // 15 - 16 removed by spec
 
-  describe('Change Stream prose 17-18', function () {
+  describe.only('Change Stream prose 17-18', function () {
     let client;
     let coll;
     let startAfter;
@@ -877,9 +877,7 @@ describe('Change Stream prose tests', function () {
       });
     });
 
-    afterEach(function (done) {
-      client.close(done);
-    });
+    afterEach(() => client.close());
 
     // 17. $changeStream stage for ChangeStream started with startAfter against a server >=4.1.1
     // that has not received any results yet
@@ -888,7 +886,7 @@ describe('Change Stream prose tests', function () {
     // when resuming a change stream.
     it('$changeStream without results must include startAfter and not resumeAfter', {
       metadata: { requires: { topology: 'replicaset', mongodb: '>=4.1.1' } },
-      test: function (done) {
+      test: function () {
         const events = [];
         client.on('commandStarted', e => recordEvent(events, e));
         const changeStream = coll.watch([], { startAfter });

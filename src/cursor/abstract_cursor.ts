@@ -1,6 +1,7 @@
 import { Readable, Transform } from 'stream';
 
 import { type BSONSerializeOptions, type Document, Long, pluckBSONSerializeOptions } from '../bson';
+import { type CursorResponse, ExplainResponse } from '../cmap/wire_protocol/responses';
 import {
   type AnyError,
   MongoAPIError,
@@ -12,7 +13,7 @@ import {
   MongoTailableCursorError
 } from '../error';
 import type { MongoClient } from '../mongo_client';
-import { type TODO_NODE_3286, TypedEventEmitter } from '../mongo_types';
+import { TypedEventEmitter } from '../mongo_types';
 import { executeOperation, type ExecutionResult } from '../operations/execute_operation';
 import { GetMoreOperation } from '../operations/get_more';
 import { KillCursorsOperation } from '../operations/kill_cursors';
@@ -20,12 +21,10 @@ import { ReadConcern, type ReadConcernLike } from '../read_concern';
 import { ReadPreference, type ReadPreferenceLike } from '../read_preference';
 import type { Server } from '../sdam/server';
 import { ClientSession, maybeClearPinnedConnection } from '../sessions';
-import { List, type MongoDBNamespace, ns, squashError } from '../utils';
+import { type MongoDBNamespace, squashError } from '../utils';
 
 /** @internal */
 const kId = Symbol('id');
-/** @internal */
-const kDocuments = Symbol('documents');
 /** @internal */
 const kServer = Symbol('server');
 /** @internal */
@@ -44,8 +43,6 @@ const kInitialized = Symbol('initialized');
 const kClosed = Symbol('closed');
 /** @internal */
 const kKilled = Symbol('killed');
-/** @internal */
-const kInit = Symbol('kInit');
 
 /** @public */
 export const CURSOR_FLAGS = [
@@ -135,6 +132,7 @@ export abstract class AbstractCursor<
   TSchema = any,
   CursorEvents extends AbstractCursorEvents = AbstractCursorEvents
 > extends TypedEventEmitter<CursorEvents> {
+  private response: CursorResponse | null = null;
   /** @internal */
   [kId]: Long | null;
   /** @internal */
@@ -143,8 +141,6 @@ export abstract class AbstractCursor<
   [kServer]?: Server;
   /** @internal */
   [kNamespace]: MongoDBNamespace;
-  /** @internal */
-  [kDocuments]: List<TSchema>;
   /** @internal */
   [kClient]: MongoClient;
   /** @internal */
@@ -161,6 +157,8 @@ export abstract class AbstractCursor<
   /** @event */
   static readonly CLOSE = 'close' as const;
 
+  private explainResponse: ExplainResponse | null = null;
+
   /** @internal */
   constructor(
     client: MongoClient,
@@ -175,7 +173,6 @@ export abstract class AbstractCursor<
     this[kClient] = client;
     this[kNamespace] = namespace;
     this[kId] = null;
-    this[kDocuments] = new List();
     this[kInitialized] = false;
     this[kClosed] = false;
     this[kKilled] = false;
@@ -277,16 +274,21 @@ export abstract class AbstractCursor<
 
   /** Returns current buffered documents length */
   bufferedCount(): number {
-    return this[kDocuments].length;
+    return (this.response?.batchLength ?? 0) - (this.response?.iterated ?? 0);
+  }
+
+  public nextDocument() {
+    return this.response?.next(this[kOptions]) ?? null;
   }
 
   /** Returns current buffered documents */
   readBufferedDocuments(number?: number): TSchema[] {
     const bufferedDocs: TSchema[] = [];
-    const documentsToRead = Math.min(number ?? this[kDocuments].length, this[kDocuments].length);
+    const bufferedCount = this.bufferedCount();
+    const documentsToRead = Math.min(number ?? bufferedCount, bufferedCount);
 
     for (let count = 0; count < documentsToRead; count++) {
-      const document = this[kDocuments].shift();
+      const document = this.nextDocument();
       if (document != null) {
         bufferedDocs.push(document);
       }
@@ -378,14 +380,17 @@ export abstract class AbstractCursor<
       return false;
     }
 
-    if (this[kDocuments].length !== 0) {
+    if (this.bufferedCount() !== 0) {
       return true;
     }
 
-    const doc = await next<TSchema>(this, { blocking: true, transform: false });
+    await this.executeCursorOperation<TSchema>(this, {
+      blocking: true,
+      transform: false,
+      hasNext: true
+    });
 
-    if (doc) {
-      this[kDocuments].unshift(doc);
+    if (this.bufferedCount() !== 0) {
       return true;
     }
 
@@ -398,7 +403,11 @@ export abstract class AbstractCursor<
       throw new MongoCursorExhaustedError();
     }
 
-    return await next(this, { blocking: true, transform: true });
+    return await this.executeCursorOperation(this, {
+      blocking: true,
+      transform: true,
+      hasNext: false
+    });
   }
 
   /**
@@ -409,7 +418,11 @@ export abstract class AbstractCursor<
       throw new MongoCursorExhaustedError();
     }
 
-    return await next(this, { blocking: false, transform: true });
+    return await this.executeCursorOperation(this, {
+      blocking: false,
+      transform: true,
+      hasNext: false
+    });
   }
 
   /**
@@ -606,7 +619,6 @@ export abstract class AbstractCursor<
     }
 
     this[kId] = null;
-    this[kDocuments].clear();
     this[kClosed] = false;
     this[kKilled] = false;
     this[kInitialized] = false;
@@ -633,7 +645,7 @@ export abstract class AbstractCursor<
   protected abstract _initialize(session: ClientSession | undefined): Promise<ExecutionResult>;
 
   /** @internal */
-  async getMore(batchSize: number): Promise<Document | null> {
+  async getMore(batchSize: number): Promise<CursorResponse> {
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const getMoreOperation = new GetMoreOperation(this[kNamespace], this[kId]!, this[kServer]!, {
       ...this[kOptions],
@@ -651,34 +663,24 @@ export abstract class AbstractCursor<
    * operation.  We cannot refactor to use the abstract _initialize method without
    * a significant refactor.
    */
-  async [kInit](): Promise<void> {
+  private async abstractCursorInit(): Promise<void> {
     try {
       const state = await this._initialize(this[kSession]);
       const response = state.response;
       this[kServer] = state.server;
-      if (response.cursor) {
-        // TODO(NODE-2674): Preserve int64 sent from MongoDB
-        this[kId] =
-          typeof response.cursor.id === 'number'
-            ? Long.fromNumber(response.cursor.id)
-            : typeof response.cursor.id === 'bigint'
-            ? Long.fromBigInt(response.cursor.id)
-            : response.cursor.id;
-
-        if (response.cursor.ns) {
-          this[kNamespace] = ns(response.cursor.ns);
-        }
-
-        this[kDocuments].pushMany(response.cursor.firstBatch);
-      }
+      // TODO(NODE-2674): Preserve int64 sent from MongoDB
+      this[kId] = response.id;
+      if (response.ns) this[kNamespace] = response.ns;
+      this.response = response.batchLength !== 0 ? response : null;
 
       // When server responses return without a cursor document, we close this cursor
       // and return the raw server response. This is often the case for explain commands
       // for example
       if (this[kId] == null) {
+        if (ExplainResponse.isExplainResponse(response)) {
+          this.explainResponse = response;
+        }
         this[kId] = Long.ZERO;
-        // TODO(NODE-3286): ExecutionResult needs to accept a generic parameter
-        this[kDocuments].push(state.response as TODO_NODE_3286);
       }
 
       // the cursor is now initialized, even if it is dead
@@ -696,111 +698,113 @@ export abstract class AbstractCursor<
 
     return;
   }
-}
 
-/**
- * @param cursor - the cursor on which to call `next`
- * @param blocking - a boolean indicating whether or not the cursor should `block` until data
- *     is available.  Generally, this flag is set to `false` because if the getMore returns no documents,
- *     the cursor has been exhausted.  In certain scenarios (ChangeStreams, tailable await cursors and
- *     `tryNext`, for example) blocking is necessary because a getMore returning no documents does
- *     not indicate the end of the cursor.
- * @param transform - if true, the cursor's transform function is applied to the result document (if the transform exists)
- * @returns the next document in the cursor, or `null`.  When `blocking` is `true`, a `null` document means
- * the cursor has been exhausted.  Otherwise, it means that there is no document available in the cursor's buffer.
- */
-async function next<T>(
-  cursor: AbstractCursor<T>,
-  {
-    blocking,
-    transform
-  }: {
-    blocking: boolean;
-    transform: boolean;
-  }
-): Promise<T | null> {
-  if (cursor.closed) {
+  /**
+   * @param cursor - the cursor on which to call `next`
+   * @param blocking - a boolean indicating whether or not the cursor should `block` until data
+   *     is available.  Generally, this flag is set to `false` because if the getMore returns no documents,
+   *     the cursor has been exhausted.  In certain scenarios (ChangeStreams, tailable await cursors and
+   *     `tryNext`, for example) blocking is necessary because a getMore returning no documents does
+   *     not indicate the end of the cursor.
+   * @param transform - if true, the cursor's transform function is applied to the result document (if the transform exists)
+   * @returns the next document in the cursor, or `null`.  When `blocking` is `true`, a `null` document means
+   * the cursor has been exhausted.  Otherwise, it means that there is no document available in the cursor's buffer.
+   */
+  private async executeCursorOperation<T>(
+    cursor: AbstractCursor<T>,
+    {
+      blocking,
+      transform,
+      hasNext
+    }: {
+      blocking: boolean;
+      transform: boolean;
+      hasNext: boolean;
+    }
+  ): Promise<T | null> {
+    if (cursor.closed) {
+      return null;
+    }
+
+    do {
+      if (cursor[kId] == null) {
+        // All cursors must operate within a session, one must be made implicitly if not explicitly provided
+        await cursor.abstractCursorInit();
+      }
+
+      if (this.explainResponse != null) {
+        return this.explainResponse.toObject(this[kOptions]) as any;
+      }
+
+      if (cursor.bufferedCount() !== 0) {
+        if (hasNext) return { hasNext: true } as T;
+
+        const doc = cursor.nextDocument();
+
+        if (doc != null && transform && cursor[kTransform]) {
+          try {
+            return cursor[kTransform](doc);
+          } catch (error) {
+            try {
+              await cleanupCursor(cursor, { error, needsToEmitClosed: true });
+            } catch (error) {
+              // `cleanupCursor` should never throw, squash and throw the original error
+              squashError(error);
+            }
+            throw error;
+          }
+        }
+
+        return doc;
+      }
+
+      if (cursor.isDead) {
+        // if the cursor is dead, we clean it up
+        // cleanupCursor should never throw, but if it does it indicates a bug in the driver
+        // and we should surface the error
+        await cleanupCursor(cursor, {});
+        return null;
+      }
+
+      // otherwise need to call getMore
+      const batchSize = cursor[kOptions].batchSize || 1000;
+
+      try {
+        const response = await cursor.getMore(batchSize);
+
+        if (response) {
+          const cursorId = response.id;
+          cursor.response = response.batchLength !== 0 ? response : null;
+          cursor[kId] = cursorId;
+        }
+      } catch (error) {
+        try {
+          await cleanupCursor(cursor, { error, needsToEmitClosed: true });
+        } catch (error) {
+          // `cleanupCursor` should never throw, squash and throw the original error
+          squashError(error);
+        }
+        throw error;
+      }
+
+      if (cursor.isDead) {
+        // If we successfully received a response from a cursor BUT the cursor indicates that it is exhausted,
+        // we intentionally clean up the cursor to release its session back into the pool before the cursor
+        // is iterated.  This prevents a cursor that is exhausted on the server from holding
+        // onto a session indefinitely until the AbstractCursor is iterated.
+        //
+        // cleanupCursorAsync should never throw, but if it does it indicates a bug in the driver
+        // and we should surface the error
+        await cleanupCursor(cursor, {});
+      }
+
+      if (cursor.bufferedCount() === 0 && blocking === false) {
+        return null;
+      }
+    } while (!cursor.isDead || cursor.bufferedCount() !== 0);
+
     return null;
   }
-
-  do {
-    if (cursor[kId] == null) {
-      // All cursors must operate within a session, one must be made implicitly if not explicitly provided
-      await cursor[kInit]();
-    }
-
-    if (cursor[kDocuments].length !== 0) {
-      const doc = cursor[kDocuments].shift();
-
-      if (doc != null && transform && cursor[kTransform]) {
-        try {
-          return cursor[kTransform](doc);
-        } catch (error) {
-          try {
-            await cleanupCursor(cursor, { error, needsToEmitClosed: true });
-          } catch (error) {
-            // `cleanupCursor` should never throw, squash and throw the original error
-            squashError(error);
-          }
-          throw error;
-        }
-      }
-
-      return doc;
-    }
-
-    if (cursor.isDead) {
-      // if the cursor is dead, we clean it up
-      // cleanupCursor should never throw, but if it does it indicates a bug in the driver
-      // and we should surface the error
-      await cleanupCursor(cursor, {});
-      return null;
-    }
-
-    // otherwise need to call getMore
-    const batchSize = cursor[kOptions].batchSize || 1000;
-
-    try {
-      const response = await cursor.getMore(batchSize);
-
-      if (response) {
-        const cursorId =
-          typeof response.cursor.id === 'number'
-            ? Long.fromNumber(response.cursor.id)
-            : typeof response.cursor.id === 'bigint'
-            ? Long.fromBigInt(response.cursor.id)
-            : response.cursor.id;
-
-        cursor[kDocuments].pushMany(response.cursor.nextBatch);
-        cursor[kId] = cursorId;
-      }
-    } catch (error) {
-      try {
-        await cleanupCursor(cursor, { error, needsToEmitClosed: true });
-      } catch (error) {
-        // `cleanupCursor` should never throw, squash and throw the original error
-        squashError(error);
-      }
-      throw error;
-    }
-
-    if (cursor.isDead) {
-      // If we successfully received a response from a cursor BUT the cursor indicates that it is exhausted,
-      // we intentionally clean up the cursor to release its session back into the pool before the cursor
-      // is iterated.  This prevents a cursor that is exhausted on the server from holding
-      // onto a session indefinitely until the AbstractCursor is iterated.
-      //
-      // cleanupCursorAsync should never throw, but if it does it indicates a bug in the driver
-      // and we should surface the error
-      await cleanupCursor(cursor, {});
-    }
-
-    if (cursor[kDocuments].length === 0 && blocking === false) {
-      return null;
-    }
-  } while (!cursor.isDead || cursor[kDocuments].length !== 0);
-
-  return null;
 }
 
 async function cleanupCursor(
@@ -816,7 +820,7 @@ async function cleanupCursor(
   // Cursors only emit closed events once the client-side cursor has been exhausted fully or there
   // was an error.  Notably, when the server returns a cursor id of 0 and a non-empty batch, we
   // cleanup the cursor but don't emit a `close` event.
-  const needsToEmitClosed = options?.needsToEmitClosed ?? cursor[kDocuments].length === 0;
+  const needsToEmitClosed = options?.needsToEmitClosed ?? cursor.bufferedCount() === 0;
 
   if (error) {
     if (cursor.loadBalanced && error instanceof MongoNetworkError) {
@@ -920,8 +924,9 @@ class ReadableCursorStream extends Readable {
   }
 
   private _readNext() {
+    const e = new Error();
     // eslint-disable-next-line github/no-then
-    next(this._cursor, { blocking: true, transform: true }).then(
+    this._cursor.next().then(
       result => {
         if (result == null) {
           this.push(null);
@@ -937,6 +942,9 @@ class ReadableCursorStream extends Readable {
         }
       },
       err => {
+        let lastCause = err;
+        while (lastCause.cause != null) lastCause = lastCause.cause;
+        lastCause.cause = e;
         // NOTE: This is questionable, but we have a test backing the behavior. It seems the
         //       desired behavior is that a stream ends cleanly when a user explicitly closes
         //       a client during iteration. Alternatively, we could do the "right" thing and

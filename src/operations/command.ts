@@ -1,4 +1,5 @@
 import type { BSONSerializeOptions, Document } from '../bson';
+import { ExplainResponse, type MongoDBResponseConstructor } from '../cmap/wire_protocol/responses';
 import { MongoInvalidArgumentError } from '../error';
 import { Explain, type ExplainOptions } from '../explain';
 import { ReadConcern } from '../read_concern';
@@ -106,10 +107,24 @@ export abstract class CommandOperation<T> extends AbstractOperation<T> {
     return true;
   }
 
+  async executeCommand<T extends MongoDBResponseConstructor>(
+    server: Server,
+    session: ClientSession | undefined,
+    cmd: Document,
+    responseType: T | undefined
+  ): Promise<typeof responseType extends undefined ? Document : InstanceType<T>>;
+
   async executeCommand(
     server: Server,
     session: ClientSession | undefined,
     cmd: Document
+  ): Promise<Document>;
+
+  async executeCommand(
+    server: Server,
+    session: ClientSession | undefined,
+    cmd: Document,
+    responseType?: MongoDBResponseConstructor
   ): Promise<Document> {
     // TODO: consider making this a non-enumerable property
     this.server = server;
@@ -150,8 +165,9 @@ export abstract class CommandOperation<T> extends AbstractOperation<T> {
 
     if (this.hasAspect(Aspect.EXPLAINABLE) && this.explain) {
       cmd = decorateWithExplain(cmd, this.explain);
+      responseType = ExplainResponse;
     }
 
-    return await server.command(this.ns, cmd, options);
+    return await server.command(this.ns, cmd, options, responseType);
   }
 }

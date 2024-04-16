@@ -74,7 +74,7 @@ export class DistinctOperation extends CommandOperation<any[]> {
 
     const result = await super.executeCommand(server, session, cmd);
 
-    return this.explain ? result : result.values;
+    return this.explain ? result.toObject() : result.values;
   }
 }
 

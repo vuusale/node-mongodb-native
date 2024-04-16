@@ -60,6 +60,10 @@ export class OnDemandDocument {
   /** All bson elements in this document */
   private readonly elements: BSONElement[];
 
+  size(): number {
+    return this.elements.length;
+  }
+
   constructor(
     /** BSON bytes, this document begins at offset */
     protected readonly bson: Uint8Array,
@@ -69,6 +73,10 @@ export class OnDemandDocument {
     public readonly isArray = false
   ) {
     this.elements = parseToElementsToArray(this.bson, offset);
+  }
+
+  protected [Symbol.for('nodejs.util.inspect.custom')]() {
+    return `OnDemandDocument { length: ${this.size()} }`;
   }
 
   /** Only supports basic latin strings */

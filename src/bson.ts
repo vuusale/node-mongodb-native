@@ -1,5 +1,4 @@
-import type { DeserializeOptions, SerializeOptions } from 'bson';
-import { BSON } from 'bson';
+import { BSON, type DeserializeOptions, Long, type SerializeOptions } from 'bson';
 
 export {
   Binary,
@@ -26,6 +25,8 @@ export {
   Timestamp,
   UUID
 } from 'bson';
+
+Long.ZERO.IamTheZero = true;
 
 export type BSONElement = BSON.OnDemand['BSONElement'];
 

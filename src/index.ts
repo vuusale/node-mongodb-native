@@ -290,8 +290,17 @@ export type { ConnectionPoolMetrics } from './cmap/metrics';
 export type { StreamDescription, StreamDescriptionOptions } from './cmap/stream_description';
 export type { CompressorName } from './cmap/wire_protocol/compression';
 export type { JSTypeOf, OnDemandDocument } from './cmap/wire_protocol/on_demand/document';
-export type { MongoDBResponse, MongoDBResponseConstructor } from './cmap/wire_protocol/responses';
-export type { CollectionOptions, CollectionPrivate, ModifyResult } from './collection';
+export type {
+  CursorResponse,
+  MongoDBResponse,
+  MongoDBResponseConstructor
+} from './cmap/wire_protocol/responses';
+export type {
+  CollectionOptions,
+  CollectionPrivate,
+  CountDocumentsOptions,
+  ModifyResult
+} from './collection';
 export type {
   COMMAND_FAILED,
   COMMAND_STARTED,
@@ -449,7 +458,6 @@ export type {
   OperationParent
 } from './operations/command';
 export type { CountOptions } from './operations/count';
-export type { CountDocumentsOptions } from './operations/count_documents';
 export type {
   ClusteredCollectionOptions,
   CreateCollectionOptions,

@@ -145,7 +145,7 @@ export class UpdateOneOperation extends UpdateOperation {
     session: ClientSession | undefined
   ): Promise<UpdateResult> {
     const res: TODO_NODE_3286 = await super.execute(server, session);
-    if (this.explain != null) return res;
+    if (this.explain != null) return res.toObject(this.bsonOptions);
     if (res.code) throw new MongoServerError(res);
     if (res.writeErrors) throw new MongoServerError(res.writeErrors[0]);
 
@@ -179,7 +179,7 @@ export class UpdateManyOperation extends UpdateOperation {
     session: ClientSession | undefined
   ): Promise<UpdateResult> {
     const res: TODO_NODE_3286 = await super.execute(server, session);
-    if (this.explain != null) return res;
+    if (this.explain != null) return res.toObject(this.bsonOptions);
     if (res.code) throw new MongoServerError(res);
     if (res.writeErrors) throw new MongoServerError(res.writeErrors[0]);
 
@@ -232,7 +232,7 @@ export class ReplaceOneOperation extends UpdateOperation {
     session: ClientSession | undefined
   ): Promise<UpdateResult> {
     const res: TODO_NODE_3286 = await super.execute(server, session);
-    if (this.explain != null) return res;
+    if (this.explain != null) return res.toObject(this.bsonOptions);
     if (res.code) throw new MongoServerError(res);
     if (res.writeErrors) throw new MongoServerError(res.writeErrors[0]);
 

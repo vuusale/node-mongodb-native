@@ -241,8 +241,7 @@ operations.set('createChangeStream', async ({ entities, operation }) => {
 
   const { pipeline, ...args } = operation.arguments!;
   const changeStream = watchable.watch(pipeline, args);
-  const kInit = getSymbolFrom(AbstractCursor.prototype, 'kInit');
-  await changeStream.cursor[kInit]();
+  await changeStream.cursor.abstractCursorInit();
   return changeStream;
 });
 
