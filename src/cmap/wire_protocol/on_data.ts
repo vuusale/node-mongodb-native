@@ -1,3 +1,4 @@
+import { type Buffer } from 'buffer';
 import { type EventEmitter } from 'events';
 
 import { List, promiseWithResolvers } from '../../utils';

@@ -1,3 +1,5 @@
+import { Buffer } from 'buffer';
+
 import { Binary, type Document, Long, type Timestamp } from './bson';
 import type { CommandOptions, Connection } from './cmap/connection';
 import { ConnectionPoolMetrics } from './cmap/metrics';

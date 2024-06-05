@@ -1,1 +1,4 @@
+import { Buffer } from 'node:buffer';
+
+globalThis.Buffer = Buffer;
 export * from 'node:buffer';

@@ -1,3 +1,4 @@
+import { Buffer } from 'buffer';
 import { type Readable, Transform, type TransformCallback } from 'stream';
 import { clearTimeout, setTimeout } from 'timers';
 

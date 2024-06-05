@@ -1,3 +1,4 @@
+import * as process from 'process';
 import { inspect, promisify } from 'util';
 
 import { type Document, EJSON, type EJSONOptions, type ObjectId } from './bson';

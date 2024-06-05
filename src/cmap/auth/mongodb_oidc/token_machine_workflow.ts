@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as process from 'process';
 
 import { MongoAWSError } from '../../../error';
 import { type AccessToken, MachineWorkflow } from './machine_workflow';
