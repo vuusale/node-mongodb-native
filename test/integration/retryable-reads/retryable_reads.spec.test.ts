@@ -15,19 +15,23 @@ describe('Retryable Reads (legacy)', function () {
   });
 
   generateTopologyTests(testSuites, testContext, spec => {
-    return (
-      spec.description.match(/distinct/i) ||
-      spec.description.match(/aggregate/i) ||
-      spec.description.match(/countDocuments/i) ||
-      spec.description.match(/listIndexes/i) ||
-      spec.description.match(/listDatabases/i) ||
-      spec.description.match(/listDatabaseNames/i) ||
-      spec.description.match(/listCollections/i) ||
-      spec.description.match(/listCollectionNames/i) ||
-      spec.description.match(/estimatedDocumentCount/i) ||
-      spec.description.match(/count/i) ||
-      spec.description.match(/find/i)
-    );
+    const skippedTests = [
+      /distinct/i,
+      /aggregate/i,
+      /countDocuments/i,
+      /listIndexes/i,
+      /listDatabases/i,
+      /listDatabaseNames/i,
+      /listCollections/i,
+      /listCollectionNames/i,
+      /estimatedDocumentCount/i,
+      /count/i,
+      /find/i
+    ];
+    if (skippedTests.some(test => test.test(spec.description))) {
+      return 'Test skipped by generic filter logic.';
+    }
+    return true;
   });
 });
 

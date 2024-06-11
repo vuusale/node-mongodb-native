@@ -142,7 +142,7 @@ function legacyRunOnToRunOnRequirement(runOn) {
 }
 
 /**
- * @param {((test: { description: string }) => boolean)?} filter a function that returns true for any tests that should run, false otherwise.
+ * @param {((test: { description: string }) => true | string)?} filter a function that returns true for any tests that should run, false otherwise.
  */
 function generateTopologyTests(testSuites, testContext, filter) {
   for (const testSuite of testSuites) {
@@ -177,9 +177,13 @@ function generateTopologyTests(testSuites, testContext, filter) {
         shouldRun = false;
       }
 
-      if (shouldRun && typeof filter === 'function' && !filter(spec, this.configuration)) {
-        this.currentTest.skipReason = `filtered by custom filter passed to generateTopologyTests`;
-        shouldRun = false;
+      if (shouldRun && typeof filter === 'function') {
+        const result = filter(spec, this.configuration);
+        if (typeof result === 'string') {
+          this.currentTest.skipReason = result;
+          // `filtered by custom filter passed to generateTopologyTests`;
+          shouldRun = false;
+        }
       }
 
       let csfleFilterError = null;

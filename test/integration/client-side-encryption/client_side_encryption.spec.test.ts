@@ -84,7 +84,7 @@ describe('Client Side Encryption (Legacy)', function () {
 
   generateTopologyTests(testSuites, testContext, ({ description }) => {
     if (SKIPPED_TESTS.has(description)) {
-      return false;
+      return 'Skipped by generic test name skip filter.';
     }
     if (isServerless) {
       // TODO(NODE-4730): Fix failing csfle tests against serverless
@@ -93,19 +93,17 @@ describe('Client Side Encryption (Legacy)', function () {
         'encryptedFieldsMap is preferred over remote encryptedFields'
       ].includes(description);
 
-      return !isSkippedTest;
+      return isSkippedTest ? 'TODO(NODE-4730): Fix failing csfle tests against serverless' : true;
     }
 
     if (
       description === 'Insert a document with auto encryption using KMIP delegated KMS provider'
     ) {
-      if (
-        typeof filter.filter({
-          metadata: { requires: { clientSideEncryption: '>=6.0.1' } }
-        }) === 'string'
-      ) {
-        return false;
-      }
+      const result = filter.filter({
+        metadata: { requires: { clientSideEncryption: '>=6.0.1' } }
+      });
+
+      if (typeof result === 'string') return result;
     }
 
     return true;

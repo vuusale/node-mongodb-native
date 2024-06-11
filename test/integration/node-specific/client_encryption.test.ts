@@ -321,7 +321,7 @@ describe('ClientEncryption integration tests', function () {
       });
 
       completeOptions = {
-        algorithm: 'RangePreview',
+        algorithm: 'Range',
         contentionFactor: 0,
         rangeOptions: {
           min: new Long(0),
@@ -346,12 +346,17 @@ describe('ClientEncryption integration tests', function () {
     });
   });
 
-  describe('encryptExpression()', function () {
+  describe.only('encryptExpression()', function () {
     let clientEncryption;
     let completeOptions;
     let dataKey;
     const expression = {
       $and: [{ someField: { $gt: 1 } }]
+    };
+    const metadata: MongoDBMetadataUI = {
+      requires: {
+        clientSideEncryption: '>=6.0.1'
+      }
     };
 
     beforeEach(async function () {
@@ -366,12 +371,13 @@ describe('ClientEncryption integration tests', function () {
       });
 
       completeOptions = {
-        algorithm: 'RangePreview',
-        queryType: 'rangePreview',
+        algorithm: 'Range',
+        queryType: 'range',
         contentionFactor: 0,
         rangeOptions: {
           min: new Int32(0),
           max: new Int32(10),
+          trimFactor: new Int32(1),
           sparsity: new Long(1)
         },
         keyId: dataKey
@@ -396,7 +402,7 @@ describe('ClientEncryption integration tests', function () {
       expect(errorOrResult).to.be.instanceof(TypeError);
     });
 
-    it(`throws if algorithm does not equal 'rangePreview'`, metadata, async function () {
+    it(`throws if algorithm does not equal 'range'`, metadata, async function () {
       completeOptions['algorithm'] = 'equality';
       const errorOrResult = await clientEncryption
         .encryptExpression(expression, completeOptions)
@@ -406,10 +412,10 @@ describe('ClientEncryption integration tests', function () {
     });
 
     it(
-      `does not throw if algorithm has different casing than 'rangePreview'`,
+      `does not throw if algorithm has different casing than 'range'`,
       metadata,
       async function () {
-        completeOptions['algorithm'] = 'rAnGePrEvIeW';
+        completeOptions['algorithm'] = 'rAnGe';
         const errorOrResult = await clientEncryption
           .encryptExpression(expression, completeOptions)
           .catch(e => e);

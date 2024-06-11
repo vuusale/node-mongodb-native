@@ -595,9 +595,7 @@ export class ClientEncryption {
   /**
    * Encrypts a Match Expression or Aggregate Expression to query a range index.
    *
-   * Only supported when queryType is "rangePreview" and algorithm is "RangePreview".
-   *
-   * @experimental The Range algorithm is experimental only. It is not intended for production use. It is subject to breaking changes.
+   * Only supported when queryType is "range" and algorithm is "Range".
    *
    * @param expression - a BSON document of one of the following forms:
    *  1. A Match Expression of this form:
@@ -737,7 +735,7 @@ export interface ClientEncryptionEncryptOptions {
     | 'AEAD_AES_256_CBC_HMAC_SHA_512-Random'
     | 'Indexed'
     | 'Unindexed'
-    | 'RangePreview';
+    | 'Range';
 
   /**
    * The id of the Binary dataKey to use for encryption
@@ -753,13 +751,10 @@ export interface ClientEncryptionEncryptOptions {
   contentionFactor?: bigint | number;
 
   /**
-   * The query type supported.  Only the queryType `equality` is stable.
-   *
-   * @experimental Public Technical Preview: The queryType `rangePreview` is experimental.
+   * The query type supported.
    */
-  queryType?: 'equality' | 'rangePreview';
+  queryType?: 'equality' | 'range';
 
-  /** @experimental Public Technical Preview: The index options for a Queryable Encryption field supporting "rangePreview" queries.*/
   rangeOptions?: RangeOptions;
 }
 
@@ -956,43 +951,4 @@ export interface RangeOptions {
   max?: any;
   sparsity: Long;
   precision?: number;
-}
-
-/**
- * @public
- * Options to provide when encrypting data.
- */
-export interface ClientEncryptionEncryptOptions {
-  /**
-   * The algorithm to use for encryption.
-   */
-  algorithm:
-    | 'AEAD_AES_256_CBC_HMAC_SHA_512-Deterministic'
-    | 'AEAD_AES_256_CBC_HMAC_SHA_512-Random'
-    | 'Indexed'
-    | 'Unindexed'
-    | 'RangePreview';
-
-  /**
-   * The id of the Binary dataKey to use for encryption
-   */
-  keyId?: Binary;
-
-  /**
-   * A unique string name corresponding to an already existing dataKey.
-   */
-  keyAltName?: string;
-
-  /** The contention factor. */
-  contentionFactor?: bigint | number;
-
-  /**
-   * The query type supported.  Only the queryType `equality` is stable.
-   *
-   * @experimental Public Technical Preview: The queryType `rangePreview` is experimental.
-   */
-  queryType?: 'equality' | 'rangePreview';
-
-  /** @experimental Public Technical Preview: The index options for a Queryable Encryption field supporting "rangePreview" queries.*/
-  rangeOptions?: RangeOptions;
 }
