@@ -42,26 +42,18 @@ jobs:
           aws_secret_id: ${{ secrets.AWS_SECRET_ID }}
           npm_package_name: 'mongodb'
           dry_run: ${{ needs.release_please.outputs.release_created == '' }}
-      # - run: npm publish --provenance
-      #   env:
-      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Test 21
-        shell: bash
-        run: |
-          mkdir files
-          echo ${{ steps.get_vars.outputs.package_file }}
-          echo "${{ steps.get_vars.outputs.package_file }}"
-          ls mongodb*
-          mv ${{ steps.get_vars.outputs.package_file }} files
-          mv ${{ steps.get_vars.outputs.package_file }}.sig files
+      - run: npm publish --provenance
+        if: ${{ needs.release_please.outputs.release_created }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Generate authorized pub report
         uses: mongodb-labs/drivers-github-tools/authorized-pub@v2
         with:
           release_version: ${{ steps.get_version.outputs.package_version }}
           product_name: node-mongodb-native
-          filenames: files/*
+          filenames: ${{ steps.get_vars.outputs.package_file }}*
           token:  ${{ github.token }}
 
       - name: Test
