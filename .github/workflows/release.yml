@@ -42,9 +42,9 @@ jobs:
           aws_secret_id: ${{ secrets.AWS_SECRET_ID }}
           npm_package_name: 'mongodb'
           dry_run: ${{ needs.release_please.outputs.release_created == '' }}
-      - run: npm publish --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # - run: npm publish --provenance
+      #   env:
+      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Generate authorized pub report
         uses: mongodb-labs/drivers-github-tools/authorized-pub@v2
         with:
