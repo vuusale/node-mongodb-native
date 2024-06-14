@@ -48,7 +48,9 @@ runs:
         RELEASE_ASSETS: ${{ steps.get_vars.outputs.package_file }}.temp.sig
 
     - name: Name release asset correctly
-      run: mv ${{ steps.get_vars.outputs.package_file }}.temp.sig ${{ steps.get_vars.outputs.package_file }}.sig
+      run: |
+        mv ${{ steps.get_vars.outputs.package_file }}.temp.sig ${{ steps.get_vars.outputs.package_file }}.sig
+        ls ${{ steps.get_vars.outputs.package_file }}.sig
       shell: bash
 
     - name: "Upload release artifacts"

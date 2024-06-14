@@ -52,6 +52,7 @@ jobs:
           mkdir files
           echo ${{ steps.get_vars.outputs.package_file }}
           echo "${{ steps.get_vars.outputs.package_file }}"
+          ls mongodb*
           mv ${{ steps.get_vars.outputs.package_file }} files
           mv ${{ steps.get_vars.outputs.package_file }}.sig files
 
