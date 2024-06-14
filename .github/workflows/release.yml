@@ -33,7 +33,7 @@ jobs:
         run: |
           package_version=$(jq --raw-output '.version' package.json)
           echo "package_version=${package_version}" >> "$GITHUB_OUTPUT"
-          echo "package_file=${{ inputs.npm_package_name }}-${package_version}.tgz" >> "$GITHUB_OUTPUT"
+          echo "package_file=mongodb-${package_version}.tgz" >> "$GITHUB_OUTPUT"
       - name: actions/compress_sign_and_upload
         uses: ./.github/actions/compress_sign_and_upload
         with:
