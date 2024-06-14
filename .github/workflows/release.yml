@@ -146,3 +146,8 @@ jobs:
           product_name: node-mongodb-native
           filenames: sbom.json
           token:  ${{ github.token }}
+
+      - name: Test
+        shell: bash
+        run: |
+          cat $S3_ASSETS/authorized-publication.txt
