@@ -50,7 +50,7 @@ jobs:
         with:
           release_version: ${{ steps.get_version.outputs.package_version }}
           product_name: node-mongodb-native
-          filenames: ${{ steps.get_vars.outputs.package_file }} ${{ steps.get_vars.outputs.package_file }}.sig
+          filenames: "${{ steps.get_vars.outputs.package_file }} ${{ steps.get_vars.outputs.package_file }}.sig"
           token:  ${{ github.token }}
 
       - name: Test
