@@ -142,7 +142,7 @@ jobs:
       - name: Generate authorized pub report
         uses: mongodb-labs/drivers-github-tools/authorized-pub@v2
         with:
-          version: ${{ steps.get_version.outputs.package_version }}
+          release_version: ${{ steps.get_version.outputs.package_version }}
           product_name: node-mongodb-native
           filenames: sbom.json
           token:  ${{ github.token }}
