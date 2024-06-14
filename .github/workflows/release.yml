@@ -45,12 +45,20 @@ jobs:
       # - run: npm publish --provenance
       #   env:
       #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Test 21
+        shell: bash
+        run: |
+          mkdir files
+          mv ${{ steps.get_vars.outputs.package_file }} files
+          mv ${{ steps.get_vars.outputs.package_file }}.sig files
+
       - name: Generate authorized pub report
         uses: mongodb-labs/drivers-github-tools/authorized-pub@v2
         with:
           release_version: ${{ steps.get_version.outputs.package_version }}
           product_name: node-mongodb-native
-          filenames: "${{ steps.get_vars.outputs.package_file }} ${{ steps.get_vars.outputs.package_file }}.sig"
+          filenames: files/*
           token:  ${{ github.token }}
 
       - name: Test
